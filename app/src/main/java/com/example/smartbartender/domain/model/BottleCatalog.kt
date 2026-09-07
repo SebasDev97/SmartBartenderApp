@@ -66,7 +66,7 @@ object BottleCatalog {
      * machine, but a recipe should not count as "missing an ingredient" because of ice.
      */
     val pantryStaples: Set<String> = setOf(
-        "ice", "crushed ice", "ice cubes", "water", "hot water", "carbonated water",
+        "ice", "crushed ice", "ice cubes", "water", "hot water",
         "sugar", "powdered sugar", "brown sugar", "salt", "pepper", "black pepper",
         "nutmeg", "cinnamon", "mint", "cherry", "maraschino cherry", "olive", "celery salt",
         "egg white", "hot sauce", "worcestershire sauce", "honey", "vanilla extract",

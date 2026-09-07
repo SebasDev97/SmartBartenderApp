@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.ui.screens.available.runCatchingCancellable
 import com.example.smartbartender.ui.screens.available.userMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 data class LibraryUiState(
     val query: String = "",
@@ -44,9 +46,9 @@ class LibraryViewModel(
             return
         }
         searchJob = viewModelScope.launch {
-            delay(SEARCH_DEBOUNCE_MILLIS)
+            delay(SEARCH_DEBOUNCE_MILLIS.milliseconds)
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            runCatching { repository.searchByName(query.trim()) }
+            runCatchingCancellable { repository.searchByName(query.trim()) }
                 .onSuccess { drinks ->
                     _uiState.update {
                         it.copy(isLoading = false, results = drinks.map { drink -> drink.summary })
@@ -77,7 +79,7 @@ class LibraryViewModel(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            runCatching { repository.browse() }
+            runCatchingCancellable { repository.browse() }
                 .onSuccess { drinks ->
                     _uiState.update {
                         it.copy(isLoading = false, results = drinks.map { drink -> drink.summary })

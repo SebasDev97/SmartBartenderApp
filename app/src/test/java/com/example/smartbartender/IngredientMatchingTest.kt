@@ -43,6 +43,21 @@ class IngredientMatchingTest {
     }
 
     @Test
+    fun `a staple never shadows a liquid the machine has to pour`() {
+        // "Carbonated water" is soda water: treating it as a bar-top staple would make the
+        // app claim it can pour highballs with no soda bottle loaded.
+        assertEquals("soda_water", BottleCatalog.resolveBottle("Carbonated water")?.id)
+
+        val bottleNames = BottleCatalog.bottles
+            .flatMap { it.matchNames }
+            .map { it.normalizedIngredient() }
+        assertEquals(
+            emptyList<String>(),
+            BottleCatalog.pantryStaples.filter { it in bottleNames },
+        )
+    }
+
+    @Test
     fun `every catalogue bottle has a unique id`() {
         val ids = BottleCatalog.bottles.map { it.id }
         assertEquals(ids.size, ids.distinct().size)

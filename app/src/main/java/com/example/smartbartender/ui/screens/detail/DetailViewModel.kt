@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /** One stage of the simulated pour. */
 data class PourStep(
@@ -36,7 +37,7 @@ data class PreparationState(
         get() = when {
             steps.isEmpty() -> 0f
             isFinished -> 1f
-            else -> currentStepIndex.toFloat() / steps.size
+            else -> (currentStepIndex + 1).toFloat() / steps.size
         }
 
     val currentStep: PourStep? get() = steps.getOrNull(currentStepIndex)
@@ -110,7 +111,7 @@ class DetailViewModel(
         preparationJob = viewModelScope.launch {
             steps.indices.forEach { index ->
                 _uiState.update { it.copy(preparation = it.preparation.copy(currentStepIndex = index)) }
-                delay(STEP_DURATION_MILLIS)
+                delay(STEP_DURATION_MILLIS.milliseconds)
             }
             _uiState.update {
                 it.copy(

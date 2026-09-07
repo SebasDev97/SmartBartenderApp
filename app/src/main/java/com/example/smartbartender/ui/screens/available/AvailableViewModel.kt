@@ -8,6 +8,7 @@ import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.Bottle
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.MakeableCocktail
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,7 +65,7 @@ class AvailableViewModel(
         }
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            runCatching { repository.findMakeable(bottles) }
+            runCatchingCancellable { repository.findMakeable(bottles) }
                 .onSuccess { result ->
                     _uiState.update {
                         it.copy(
@@ -91,6 +92,17 @@ class AvailableViewModel(
             AvailableViewModel(container.repository, container.preferences)
         }
     }
+}
+
+/**
+ * [runCatching] that lets cancellation through. A load that was cancelled because a newer
+ * one started must not report a failure: its state update is not itself cancellable, so the
+ * error would land after the replacement has already cleared it and strand the screen.
+ */
+inline fun <T> runCatchingCancellable(block: () -> T): Result<T> {
+    val result = runCatching(block)
+    (result.exceptionOrNull() as? CancellationException)?.let { throw it }
+    return result
 }
 
 /** Turns any failure into something a guest standing at the machine can act on. */

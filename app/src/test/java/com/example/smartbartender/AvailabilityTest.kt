@@ -41,6 +41,13 @@ class AvailabilityTest {
         ingredient2 = "Water", measure2 = "3 oz",
     )
 
+    private val highball = CocktailDto(
+        id = "5", name = "Whiskey Highball",
+        ingredient1 = "Blended whiskey", measure1 = "2 oz",
+        ingredient2 = "Carbonated water", measure2 = "Fill",
+        ingredient3 = "Ice",
+    )
+
     /** Serves the whole book from the first-letter endpoint, like the real API does. */
     private class FakeApi(private val drinks: List<CocktailDto>) : CocktailApi {
         override suspend fun searchByName(name: String) =
@@ -58,7 +65,7 @@ class AvailabilityTest {
     }
 
     private fun repository() =
-        CocktailRepository(FakeApi(listOf(margarita, mojito, negroni, absintheDrink)))
+        CocktailRepository(FakeApi(listOf(margarita, mojito, negroni, absintheDrink, highball)))
 
     @Test
     fun `a fully covered recipe can be made now`() = runTest {
@@ -104,6 +111,24 @@ class AvailabilityTest {
         assertEquals(
             listOf("Absinthe"),
             result.almost.single { it.cocktail.name == "Green Hour" }.missingIngredients,
+        )
+    }
+
+    @Test
+    fun `carbonated water still needs the soda bottle`() = runTest {
+        val whiskeyOnly = listOf("whiskey").mapNotNull(BottleCatalog::byId)
+
+        val result = repository().findMakeable(whiskeyOnly)
+
+        assertTrue(result.canMakeNow.none { it.cocktail.name == "Whiskey Highball" })
+        assertEquals(
+            listOf("Carbonated water"),
+            result.almost.single { it.cocktail.name == "Whiskey Highball" }.missingIngredients,
+        )
+
+        val withSoda = listOf("whiskey", "soda_water").mapNotNull(BottleCatalog::byId)
+        assertTrue(
+            repository().findMakeable(withSoda).canMakeNow.any { it.cocktail.name == "Whiskey Highball" },
         )
     }
 

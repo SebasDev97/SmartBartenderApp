@@ -14,18 +14,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 data class BottlesUiState(
     val loadedBottleIds: Set<String> = emptySet(),
+    /** Slot 1..MAX_SLOTS, null where the slot is empty. Assigned by the ViewModel. */
+    val slots: List<Bottle?> = List(BottleCatalog.MAX_SLOTS) { null },
     /** Transient feedback, e.g. when the rack is full. */
     val notice: String? = null,
 ) {
     val sections: List<Pair<BottleCategory, List<Bottle>>> =
         BottleCatalog.bottles.groupBy { it.category }.toList()
-
-    /** Slot 1..MAX_SLOTS, null where the slot is empty. */
-    val slots: List<Bottle?> = BottleCatalog.inSlotOrder(loadedBottleIds)
-        .let { loaded -> List(BottleCatalog.MAX_SLOTS) { index -> loaded.getOrNull(index) } }
 
     val loadedCount: Int get() = loadedBottleIds.size
     val isFull: Boolean get() = loadedCount >= BottleCatalog.MAX_SLOTS
@@ -48,10 +47,14 @@ class BottlesViewModel(
 
     private var noticeJob: Job? = null
 
+    /** Bottle id per physical slot, so a bottle stays put while its neighbours change. */
+    private var slotAssignment: List<String?> = List(BottleCatalog.MAX_SLOTS) { null }
+
     init {
         viewModelScope.launch {
             preferences.loadedBottleIds.collect { ids ->
-                _uiState.update { it.copy(loadedBottleIds = ids) }
+                val slots = assignSlots(ids)
+                _uiState.update { it.copy(loadedBottleIds = ids, slots = slots) }
             }
         }
     }
@@ -88,11 +91,29 @@ class BottlesViewModel(
         }
     }
 
+    /**
+     * Keeps every bottle in the slot it was placed in: ejecting the bottle in slot 1 leaves
+     * the rest where they are instead of shuffling them all up one, which is what the screen
+     * — drawn as the machine's four physical slots — promises. A cold start has no
+     * assignment yet and falls back to catalog order, so slot 1 survives a restart.
+     */
+    private fun assignSlots(ids: Set<String>): List<Bottle?> {
+        val assigned = slotAssignment.map { id -> id?.takeIf { it in ids } }.toMutableList()
+        BottleCatalog.inSlotOrder(ids)
+            .filterNot { bottle -> bottle.id in assigned }
+            .forEach { bottle ->
+                val free = assigned.indexOf(null)
+                if (free >= 0) assigned[free] = bottle.id
+            }
+        slotAssignment = assigned
+        return assigned.map { id -> id?.let(BottleCatalog::byId) }
+    }
+
     private fun showNotice(text: String) {
         noticeJob?.cancel()
         _uiState.update { it.copy(notice = text) }
         noticeJob = viewModelScope.launch {
-            delay(NOTICE_DURATION_MILLIS)
+            delay(NOTICE_DURATION_MILLIS.milliseconds)
             _uiState.update { it.copy(notice = null) }
         }
     }
