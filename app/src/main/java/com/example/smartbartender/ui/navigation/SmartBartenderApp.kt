@@ -24,7 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -47,7 +50,7 @@ import com.example.smartbartender.ui.screens.library.LibraryViewModel
 import com.example.smartbartender.ui.screens.settings.SettingsScreen
 import com.example.smartbartender.ui.screens.settings.SettingsViewModel
 import com.example.smartbartender.ui.theme.Obsidian
-import com.example.smartbartender.ui.theme.TextSecondary
+import com.example.smartbartender.ui.theme.TextPrimary
 
 /** Root composable: bottom navigation over the four tabs, with a pushed detail screen. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,7 +208,11 @@ private fun BartenderNavigationBar(
 ) {
     Box(
         Modifier.background(
-            Brush.verticalGradient(listOf(Color.Transparent, Obsidian.copy(alpha = 0.95f))),
+            Brush.verticalGradient(
+                0f to Obsidian.copy(alpha = 0.90f),
+                0.22f to Obsidian,
+                1f to Obsidian,
+            ),
         ),
     ) {
         NavigationBar(
@@ -225,13 +232,26 @@ private fun BartenderNavigationBar(
                             modifier = Modifier.height(24.dp * scale),
                         )
                     },
-                    label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
+                    label = {
+                        Text(
+                            text = destination.label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                letterSpacing = 0.2.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                        )
+                    },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = accent,
-                        selectedTextColor = accent,
+                        // The LED cycle dips through blue/violet, which read poorly as text on
+                        // Obsidian - lift the label towards white while keeping the live hue.
+                        selectedTextColor = lerp(accent, Color.White, 0.35f),
                         indicatorColor = accent.copy(alpha = 0.14f),
-                        unselectedIconColor = TextSecondary,
-                        unselectedTextColor = TextSecondary,
+                        unselectedIconColor = TextPrimary.copy(alpha = 0.80f),
+                        unselectedTextColor = TextPrimary.copy(alpha = 0.80f),
                     ),
                 )
             }
