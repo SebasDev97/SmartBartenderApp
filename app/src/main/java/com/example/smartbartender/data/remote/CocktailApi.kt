@@ -5,7 +5,6 @@ import com.example.smartbartender.data.remote.dto.DrinkSummaryResponse
 import retrofit2.http.GET
 import retrofit2.http.Query
 
-/** TheCocktailDB v1 endpoints used by the app (public test API key "1"). */
 interface CocktailApi {
 
     @GET("search.php")

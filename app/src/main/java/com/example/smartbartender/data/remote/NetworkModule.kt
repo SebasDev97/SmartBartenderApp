@@ -8,7 +8,6 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 
-/** Hand-rolled DI: one Retrofit/OkHttp stack for the whole process. */
 object NetworkModule {
 
     /** Test API key "1" is baked into the path, as documented by TheCocktailDB. */

@@ -37,7 +37,7 @@ import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextSecondary
 
-/** Cocktail photo with a graceful placeholder when the API has no thumbnail. */
+/** Cocktail photo with placeholder when the API has no thumbnail. */
 @Composable
 fun CocktailImage(
     url: String?,

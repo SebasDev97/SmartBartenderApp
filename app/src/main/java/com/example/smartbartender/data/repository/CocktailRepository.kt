@@ -17,13 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 
-/**
- * Single source of truth for cocktail data.
- *
- * TheCocktailDB has no "what can I make with these bottles" endpoint, so [findMakeable]
- * builds the answer client-side. Everything fetched is cached in memory for the process
- * lifetime, so returning to the Available tab is instant after the first load.
- */
 class CocktailRepository(private val api: CocktailApi) {
 
     private val cacheLock = Mutex()
