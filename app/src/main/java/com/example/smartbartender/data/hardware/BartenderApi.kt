@@ -17,8 +17,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Url
 
 /**
- * The machine's REST surface, documented in `pi/API.md`.
- *
+ * As documented in Pi/API.md.
  * Every call takes an absolute [Url]: the machine's address is typed in by the user at
  * runtime, and this way one Retrofit instance serves whatever address is current instead of
  * being rebuilt on every change.

@@ -18,7 +18,7 @@ class AppContainer(context: Context) {
     val repository: CocktailRepository = CocktailRepository(NetworkModule.createApi(debug = BuildConfig.DEBUG))
 
     /**
-     * Application-lifetime, not screen-lifetime: the machine's event socket has to outlive
+     * Application-lifetime: the machine's event socket has to outlive
      * the detail screen, or leaving it mid-pour would blind the app to the rest of the pour.
      */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

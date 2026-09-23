@@ -82,7 +82,7 @@ data class PourJob(
     val error: MachineFault?,
 )
 
-/** What the app asks the machine to pour. Volumes are already resolved; pumps are not — */
+/** What the app asks the machine to pour.*/
 /** the Pi maps bottle ids to pumps itself, so a stale rack fails cleanly instead of wrongly. */
 data class PourRequest(
     val jobId: String,
