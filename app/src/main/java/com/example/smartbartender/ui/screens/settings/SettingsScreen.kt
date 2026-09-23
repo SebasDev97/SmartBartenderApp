@@ -175,7 +175,7 @@ fun SettingsScreen(
 @Composable
 private fun MachineLinkPanel(
     state: SettingsUiState,
-    accent: androidx.compose.ui.graphics.Color,
+    accent: Color,
     ledEnabled: Boolean,
     onHostChange: (String) -> Unit,
     onPortChange: (String) -> Unit,
