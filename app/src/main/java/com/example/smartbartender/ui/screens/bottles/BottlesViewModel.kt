@@ -2,6 +2,7 @@ package com.example.smartbartender.ui.screens.bottles
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
@@ -40,6 +41,7 @@ data class BottlesUiState(
 class BottlesViewModel(
     private val preferences: BartenderPreferences,
     private val repository: CocktailRepository,
+    private val machine: BartenderMachine,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BottlesUiState())
@@ -47,14 +49,19 @@ class BottlesViewModel(
 
     private var noticeJob: Job? = null
 
-    /** Bottle id per physical slot, so a bottle stays put while its neighbours change. */
-    private var slotAssignment: List<String?> = List(BottleCatalog.MAX_SLOTS) { null }
-
     init {
         viewModelScope.launch {
-            preferences.loadedBottleIds.collect { ids ->
-                val slots = assignSlots(ids)
-                _uiState.update { it.copy(loadedBottleIds = ids, slots = slots) }
+            // Slot order is persisted now rather than held in memory: on a real machine,
+            // slot 2 is a pump with a specific bottle in it, and forgetting which across a
+            // restart means pouring the wrong liquid.
+            preferences.slots.collect { slots ->
+                _uiState.update {
+                    it.copy(
+                        loadedBottleIds = slots.filterNotNull().toSet(),
+                        slots = slots.map { id -> id?.let(BottleCatalog::byId) },
+                    )
+                }
+                machine.pushSlots(slots)
             }
         }
     }
@@ -91,24 +98,6 @@ class BottlesViewModel(
         }
     }
 
-    /**
-     * Keeps every bottle in the slot it was placed in: ejecting the bottle in slot 1 leaves
-     * the rest where they are instead of shuffling them all up one, which is what the screen
-     * — drawn as the machine's four physical slots — promises. A cold start has no
-     * assignment yet and falls back to catalog order, so slot 1 survives a restart.
-     */
-    private fun assignSlots(ids: Set<String>): List<Bottle?> {
-        val assigned = slotAssignment.map { id -> id?.takeIf { it in ids } }.toMutableList()
-        BottleCatalog.inSlotOrder(ids)
-            .filterNot { bottle -> bottle.id in assigned }
-            .forEach { bottle ->
-                val free = assigned.indexOf(null)
-                if (free >= 0) assigned[free] = bottle.id
-            }
-        slotAssignment = assigned
-        return assigned.map { id -> id?.let(BottleCatalog::byId) }
-    }
-
     private fun showNotice(text: String) {
         noticeJob?.cancel()
         _uiState.update { it.copy(notice = text) }
@@ -122,7 +111,7 @@ class BottlesViewModel(
         private const val NOTICE_DURATION_MILLIS = 2800L
 
         val Factory = containerViewModelFactory { container ->
-            BottlesViewModel(container.preferences, container.repository)
+            BottlesViewModel(container.preferences, container.repository, container.machine)
         }
     }
 }

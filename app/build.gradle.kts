@@ -58,6 +58,7 @@ dependencies {
     // Networking + JSON
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.serialization)
+    implementation(libs.okhttp)
     implementation(libs.okhttp.logging.interceptor)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)

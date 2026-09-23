@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.RecipeIngredient
@@ -70,6 +71,8 @@ fun DetailScreen(
                 cocktail = state.cocktail,
                 led = led,
                 preparationRunning = !state.preparation.isIdle,
+                machineOnline = state.machineOnline,
+                pourNotes = state.pourNotes,
                 onStartPreparation = onStartPreparation,
                 contentPadding = contentPadding,
             )
@@ -96,6 +99,8 @@ private fun RecipeContent(
     cocktail: Cocktail,
     led: LedState,
     preparationRunning: Boolean,
+    machineOnline: Boolean,
+    pourNotes: List<String>,
     onStartPreparation: () -> Unit,
     contentPadding: PaddingValues,
 ) {
@@ -147,7 +152,9 @@ private fun RecipeContent(
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = onStartPreparation,
-                enabled = !preparationRunning,
+                // Pouring is the machine's job now. With nothing connected there is no
+                // honest thing for this button to do, so it says so rather than miming one.
+                enabled = machineOnline && !preparationRunning,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -161,6 +168,28 @@ private fun RecipeContent(
                 Icon(Icons.Filled.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Make this cocktail", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            }
+
+            if (!machineOnline) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "Machine offline — set its address in Settings.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            } else if (pourNotes.isNotEmpty()) {
+                // Ice, mint and a salted rim are nobody's pump. Say so before the glass
+                // comes out half-made and it reads as a bug.
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "You'll add: " + pourNotes.joinToString(", "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
             }
 
             Spacer(Modifier.height(28.dp))

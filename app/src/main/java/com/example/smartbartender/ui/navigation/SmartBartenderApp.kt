@@ -174,6 +174,11 @@ fun SmartBartenderApp() {
                         state = settingsState,
                         led = led,
                         onLedShowChange = settingsViewModel::setLedShowEnabled,
+                        onMachineHostChange = settingsViewModel::setMachineHost,
+                        onMachinePortChange = settingsViewModel::setMachinePort,
+                        onMachineEnabledChange = settingsViewModel::setMachineEnabled,
+                        onConnect = settingsViewModel::connect,
+                        onTestConnection = settingsViewModel::testConnection,
                         contentPadding = innerPadding,
                     )
                 }
