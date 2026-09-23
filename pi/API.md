@@ -1,0 +1,376 @@
+# Smart Bartender — machine API
+
+The contract between the **Android app** and the **Raspberry Pi** that drives the pumps and the
+LED strip. Both sides are written from this document; if the two disagree, this file wins.
+
+- **Base URL** — `http://<pi-address>:8080`
+- **Version prefix** — `/api/v1` (only `/healthz` sits outside it)
+- **Content type** — `application/json` everywhere, UTF-8
+- **Field naming** — `camelCase`, matching kotlinx.serialization's defaults on the Android side
+- **Auth** — none by default. If `server.token` is set in `config.yaml`, every `/api/v1` request
+  must carry `X-Bartender-Token: <token>`; without it the header is ignored.
+
+## Who owns what
+
+The **app owns recipes**. It fetches them from TheCocktailDB, matches ingredients to bottles,
+parses measures into millilitres, and sends the Pi a finished list of "pump N, 44 ml".
+
+The **Pi owns the machine**. It knows which bottle is in which pump, how fast each pump runs,
+and how far along a pour is. It never hears about TheCocktailDB.
+
+The shared vocabulary is the **bottle id** from the app's `BottleCatalog` — `vodka`,
+`light_rum`, `lime_juice`, `triple_sec`, and so on. These strings appear in slot configuration
+and pour requests, and they are the only thing both sides must agree on beyond this document.
+
+**The Pi is the source of truth for a pour in progress.** The app issues one command and then
+renders whatever the Pi pushes over the WebSocket. It never runs its own timer. This is what
+makes a pour survive the app being backgrounded, killed, or moved to another phone.
+
+---
+
+## 1. Core objects
+
+### 1.1 `MachineStatus`
+
+The complete state of the machine. Returned by `GET /api/v1/status`, and pushed as the
+`snapshot` WebSocket event whenever anything structural changes.
+
+```json
+{
+  "machineId": "bartender-01",
+  "name": "Smart Bartender De-Luxe",
+  "firmware": "0.1.0",
+  "backend": "simulated",
+  "state": "idle",
+  "pumpCount": 4,
+  "maxPourMl": 250.0,
+  "uptimeS": 1843,
+  "slots": [
+    { "pump": 1, "bottleId": "tequila",    "mlPerSecond": 12.5 },
+    { "pump": 2, "bottleId": "triple_sec", "mlPerSecond": 12.5 },
+    { "pump": 3, "bottleId": "lime_juice", "mlPerSecond": 11.0 },
+    { "pump": 4, "bottleId": null,         "mlPerSecond": 12.5 }
+  ],
+  "led": { "enabled": true, "mode": "spectrum", "colorHex": "#2AF5E4", "brightness": 0.6, "cycleMillis": 7000 },
+  "currentJob": null,
+  "fault": null
+}
+```
+
+| Field                 | Type                        | Notes                                                                  |
+|-----------------------|-----------------------------|------------------------------------------------------------------------|
+| `machineId`           | string                      | Stable id from `config.yaml`.                                          |
+| `backend`             | `simulated` \| `gpio`       | Whether real pins are being driven. The app shows this.                |
+| `state`               | `idle` \| `busy` \| `fault` | `busy` while a job runs.                                               |
+| `pumpCount`           | int                         | Always 4 on this machine; the app's `BottleCatalog.MAX_SLOTS`.         |
+| `maxPourMl`           | float                       | Total volume ceiling for one drink. The app scales a plan down to fit. |
+| `slots[].pump`        | int                         | **1-based.** Pump 1 is the leftmost bottle.                            |
+| `slots[].bottleId`    | string \| null              | `null` means the slot is empty.                                        |
+| `slots[].mlPerSecond` | float                       | Calibration. See `POST /api/v1/pumps/{pump}/jog`.                      |
+| `currentJob`          | `PourJob` \| null           | The running job, if any.                                               |
+| `fault`               | `Fault` \| null             | Set when `state` is `fault`.                                           |
+
+### 1.2 `PourJob`
+
+One drink being made. Shaped so it maps directly onto the app's existing preparation overlay.
+
+```json
+{
+  "jobId": "1f9d0f4e-1c7a-4f4b-9f8b-2f0e5c8a7b31",
+  "drinkId": "11007",
+  "drinkName": "Margarita",
+  "status": "running",
+  "steps": [
+    { "index": 0, "kind": "glass",  "label": "Positioning glass",  "detail": "Cocktail glass",    "pump": null, "ml": null, "dispensedMl": null },
+    { "index": 1, "kind": "pour",   "label": "Pouring Tequila",    "detail": "44 ml",             "pump": 1,    "ml": 44.0, "dispensedMl": 44.0 },
+    { "index": 2, "kind": "pour",   "label": "Pouring Triple sec", "detail": "15 ml",             "pump": 2,    "ml": 15.0, "dispensedMl": 6.2 },
+    { "index": 3, "kind": "manual", "label": "Salt the rim",       "detail": "Add this yourself", "pump": null, "ml": null, "dispensedMl": null },
+    { "index": 4, "kind": "finish", "label": "Finishing touch",    "detail": "Garnish and serve", "pump": null, "ml": null, "dispensedMl": null }
+  ],
+  "currentStepIndex": 2,
+  "progress": 0.52,
+  "totalMl": 89.0,
+  "dispensedMl": 50.2,
+  "startedAtMs": 1758531234567,
+  "finishedAtMs": null,
+  "error": null
+}
+```
+
+`status` moves through:
+
+```
+queued ──► running ──(per step)──► finished
+             │                        ▲
+             ├── abort() ──► aborting ┴─► aborted
+             └── exception ─────────────► failed
+```
+
+`kind` is one of:
+
+| `kind`   | Meaning                                                                          |
+|----------|----------------------------------------------------------------------------------|
+| `glass`  | "Positioning glass" — a short pause before anything pours.                       |
+| `pour`   | A pump runs. Carries `pump`, `ml`, and a live `dispensedMl`.                     |
+| `mix`    | A stir/settle pause after the last pour.                                         |
+| `manual` | **Something the human must do** — ice, mint, a salted rim. No pump can serve it. |
+| `finish` | "Garnish and serve" — the closing beat.                                          |
+
+`progress` is **volume-weighted**, computed by the Pi: pour steps are weighted by their share of
+`totalMl`, and the non-pour steps share a small fixed remainder. It is much truer than counting
+steps, which would treat "Garnish and serve" as a fifth of the work.
+
+### 1.3 `LedState`
+
+```json
+{ "enabled": true, "mode": "spectrum", "colorHex": "#2AF5E4", "brightness": 0.6, "cycleMillis": 7000 }
+```
+
+| `mode`     | Behaviour                                                                                                  |
+|------------|------------------------------------------------------------------------------------------------------------|
+| `off`      | Strip dark. Equivalent to `enabled: false`.                                                                |
+| `solid`    | One colour, `colorHex`.                                                                                    |
+| `spectrum` | The app's cycle — cyan → blue → violet → magenta → amber → lime → cyan, one lap per `cycleMillis`.         |
+| `pour`     | Reactive fill effect. **Set by the Pi itself** while a job runs; the previous mode is restored afterwards. |
+
+`enabled: false` always wins over `mode`. The app only ever sends `spectrum` or `off`.
+
+### 1.4 `Fault`
+
+```json
+{ "code": "PUMP_FAULT", "message": "Pump 2 did not reach target", "recoverable": false }
+```
+
+---
+
+## 2. REST endpoints
+
+| Method | Path                          | Purpose                                  |
+|--------|-------------------------------|------------------------------------------|
+| `GET`  | `/healthz`                    | Liveness probe                           |
+| `GET`  | `/api/v1/status`              | Full `MachineStatus`                     |
+| `GET`  | `/api/v1/slots`               | Current pump → bottle mapping            |
+| `PUT`  | `/api/v1/slots`               | Replace the mapping                      |
+| `POST` | `/api/v1/pours`               | Start a pour                             |
+| `GET`  | `/api/v1/pours/current`       | The running job, or `204`                |
+| `GET`  | `/api/v1/pours/{jobId}`       | Re-attach to a known job                 |
+| `POST` | `/api/v1/pours/{jobId}/abort` | Stop everything                          |
+| `GET`  | `/api/v1/led`                 | Current `LedState`                       |
+| `PUT`  | `/api/v1/led`                 | Set the LED show                         |
+| `POST` | `/api/v1/pumps/{pump}/jog`    | Run one pump for N seconds (calibration) |
+
+### `GET /healthz`
+
+Deliberately outside `/api/v1` and free of auth, so the app's "Test connection" button has
+something cheap and stable to hit.
+
+```json
+{ "ok": true, "machineId": "bartender-01", "firmware": "0.1.0" }
+```
+
+### `GET /api/v1/status`
+
+Returns `MachineStatus` (§1.1). No parameters.
+
+### `PUT /api/v1/slots`
+
+The app pushes its whole rack whenever a bottle is loaded or ejected, and again on every
+reconnect, so the Pi converges on what the app believes.
+
+Request — always all four slots, `null` for an empty one:
+
+```json
+{
+  "slots": [
+    { "pump": 1, "bottleId": "tequila" },
+    { "pump": 2, "bottleId": "triple_sec" },
+    { "pump": 3, "bottleId": "lime_juice" },
+    { "pump": 4, "bottleId": null }
+  ]
+}
+```
+
+Response `200` — the updated `MachineStatus`. Also broadcasts a `slots` event.
+
+Errors: `409 MACHINE_BUSY` while a pour is running (changing the map mid-pour would send the
+wrong liquid). `422` if `pump` is out of range or a pump appears twice.
+
+### `POST /api/v1/pours`
+
+Request — the app has already resolved ingredients to bottles and measures to millilitres:
+
+```json
+{
+  "jobId": "1f9d0f4e-1c7a-4f4b-9f8b-2f0e5c8a7b31",
+  "drinkId": "11007",
+  "drinkName": "Margarita",
+  "glass": "Cocktail glass",
+  "items": [
+    { "bottleId": "tequila",    "ingredientName": "Tequila",    "ml": 44.0 },
+    { "bottleId": "triple_sec", "ingredientName": "Triple sec", "ml": 15.0 },
+    { "bottleId": "lime_juice", "ingredientName": "Lime juice", "ml": 30.0 }
+  ],
+  "manualSteps": ["Salt the rim"]
+}
+```
+
+`items` are poured **in the order given**. The Pi resolves each `bottleId` to a pump from its own
+slot table — the app never names a pump here, so a stale rack in the app surfaces as a clean
+`422 SLOT_EMPTY` instead of the wrong liquid.
+
+Response `201` with the `PourJob` (§1.2) in `queued`/`running`. Progress then arrives over the
+WebSocket; polling `GET /api/v1/pours/{jobId}` also works.
+
+#### Idempotency and re-attaching
+
+The **app** generates `jobId` (UUID v4) and repeats it in an `Idempotency-Key` header. That makes
+the call safe to retry over a flaky link:
+
+| Situation                        | Result                                                         |
+|----------------------------------|----------------------------------------------------------------|
+| New `jobId`, machine idle        | `201 Created` + the new `PourJob`                              |
+| `jobId` the Pi already knows     | `200 OK` + that same `PourJob`. **No second pour.**            |
+| New `jobId`, another job running | `409 Conflict` + `MACHINE_BUSY`, with `currentJob` in the body |
+
+The Pi keeps the last 20 jobs in memory, so `GET /api/v1/pours/{jobId}` still answers after a job
+ends. The app persists the active `jobId`; on a cold start it re-attaches and drops the user back
+into a live overlay at the right percentage.
+
+Errors: `409 MACHINE_BUSY`, `422 UNKNOWN_BOTTLE` (no such bottle id), `422 SLOT_EMPTY` (that
+bottle isn't loaded), `422 VOLUME_OUT_OF_RANGE` (an item over 150 ml, or a total over
+`maxPourMl`), `503 NOT_CONFIGURED` (no slots configured yet).
+
+### `GET /api/v1/pours/current`
+
+`200` with the `PourJob`, or `204 No Content` when idle.
+
+### `POST /api/v1/pours/{jobId}/abort`
+
+Empty body. Responds `202` immediately with the job in `aborting`; every pump stops, and a final
+`pour` event carries `aborted`. Aborting an already-finished job is a no-op that returns `200`.
+
+### `PUT /api/v1/led`
+
+```json
+{ "enabled": true, "mode": "spectrum", "cycleMillis": 7000 }
+```
+
+All fields optional except `enabled`. Response `200` with the resulting `LedState`; also
+broadcasts a `led` event. Rejected with `409` only if `mode` is `pour` (that mode belongs to the
+Pi).
+
+### `POST /api/v1/pumps/{pump}/jog`
+
+The calibration tool, and the only endpoint that drives hardware outside a pour.
+
+```json
+{ "seconds": 10.0 }
+```
+
+Run it with a measuring cup under the nozzle, then set `ml_per_s = measured_ml / seconds` in
+`config.yaml`. Repeat per pump — they will not match each other.
+
+Response `200`: `{ "pump": 1, "seconds": 10.0 }`. Capped at 30 seconds. `409 MACHINE_BUSY` during
+a pour.
+
+### Error shape
+
+Every `4xx`/`5xx` uses the same body:
+
+```json
+{ "error": { "code": "MACHINE_BUSY", "message": "A pour is already running" }, "currentJob": null }
+```
+
+| Code                  | HTTP | Meaning                                         |
+|-----------------------|------|-------------------------------------------------|
+| `MACHINE_BUSY`        | 409  | A job is running; `currentJob` is included      |
+| `NOT_CONFIGURED`      | 503  | No slots configured                             |
+| `UNKNOWN_BOTTLE`      | 422  | Bottle id not recognised                        |
+| `SLOT_EMPTY`          | 422  | That bottle is not loaded in any pump           |
+| `VOLUME_OUT_OF_RANGE` | 422  | Item over 150 ml, or total over `maxPourMl`     |
+| `PUMP_FAULT`          | 500  | Hardware trouble; the machine is now in `fault` |
+| `ABORTED_BY_USER`     | —    | Only ever appears inside `PourJob.error`        |
+
+---
+
+## 3. WebSocket — `ws://<pi-address>:8080/api/v1/events`
+
+Live machine state. Connect once and leave it open.
+
+**Every frame uses one envelope, and carries the whole object it concerns — never a delta.**
+That makes the client a plain replace, removes any chance of an ordering bug, and makes a
+reconnect self-healing.
+
+```json
+{ "type": "pour", "seq": 41, "ts": 1758531236120, "data": { "...": "the full PourJob" } }
+```
+
+`seq` is a per-connection counter for logging and de-duplication only. Gaps are not recovered by
+replay — a reconnect sends a fresh `snapshot`, which *is* the recovery mechanism.
+
+| `type`      | `data`                | Sent when                                                                                                                              |
+|-------------|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `snapshot`  | full `MachineStatus`  | Immediately on connect, and after any slot / LED / state change                                                                        |
+| `pour`      | full `PourJob`        | Job starts, every step change, and every ~200 ms while a pump runs. The last frame of a job carries `finished`, `aborted`, or `failed` |
+| `led`       | `LedState`            | LED changed from anywhere, including the Pi's own `pour` mode switch                                                                   |
+| `slots`     | `{ "slots": [...] }`  | Slot mapping changed                                                                                                                   |
+| `fault`     | `Fault`               | Hardware trouble. Also flips `state` to `fault`                                                                                        |
+| `heartbeat` | `{ "uptimeS": 1843 }` | Every 5 seconds                                                                                                                        |
+
+**The client sends nothing.** All commands go over REST, which keeps the socket a pure one-way
+state feed and the Pi's handler trivial.
+
+Liveness: the 5-second `heartbeat` plus WebSocket ping/pong. A client should treat 15 seconds of
+silence as a dead link and reconnect with backoff (1s → 2s → 4s → 8s → 15s).
+
+**A dropped socket does not abort a pour.** The machine finishes the drink; the app re-attaches
+when it comes back. This is deliberate — you do not want a Wi-Fi hiccup leaving half a Margarita
+in the glass.
+
+---
+
+## 4. curl cookbook
+
+```bash
+PI=http://localhost:8080
+
+# Is it alive?
+curl -s $PI/healthz | python3 -m json.tool
+
+# What does it think it is?
+curl -s $PI/api/v1/status | python3 -m json.tool
+
+# Load the rack
+curl -s -X PUT $PI/api/v1/slots \
+  -H 'Content-Type: application/json' \
+  -d '{"slots":[{"pump":1,"bottleId":"tequila"},{"pump":2,"bottleId":"triple_sec"},{"pump":3,"bottleId":"lime_juice"},{"pump":4,"bottleId":null}]}' \
+  | python3 -m json.tool
+
+# Watch the live feed in another terminal  (brew install websocat)
+websocat ws://localhost:8080/api/v1/events
+
+# Pour a Margarita
+JOB=$(uuidgen)
+curl -s -X POST $PI/api/v1/pours \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $JOB" \
+  -d "{\"jobId\":\"$JOB\",\"drinkId\":\"11007\",\"drinkName\":\"Margarita\",\"glass\":\"Cocktail glass\",
+       \"items\":[{\"bottleId\":\"tequila\",\"ingredientName\":\"Tequila\",\"ml\":44.0},
+                  {\"bottleId\":\"triple_sec\",\"ingredientName\":\"Triple sec\",\"ml\":15.0},
+                  {\"bottleId\":\"lime_juice\",\"ingredientName\":\"Lime juice\",\"ml\":30.0}],
+       \"manualSteps\":[\"Salt the rim\"]}" \
+  | python3 -m json.tool
+
+# Same call again -> 200, the same job, no second pour
+# Change of heart
+curl -s -X POST $PI/api/v1/pours/$JOB/abort | python3 -m json.tool
+
+# LEDs
+curl -s -X PUT $PI/api/v1/led -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"mode":"spectrum","cycleMillis":7000}' | python3 -m json.tool
+curl -s -X PUT $PI/api/v1/led -H 'Content-Type: application/json' \
+  -d '{"enabled":false}' | python3 -m json.tool
+
+# Calibrate pump 1: run it for 10s, measure what comes out, divide
+curl -s -X POST $PI/api/v1/pumps/1/jog -H 'Content-Type: application/json' -d '{"seconds":10}'
+```

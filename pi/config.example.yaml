@@ -1,0 +1,39 @@
+# Copy to config.yaml and edit. Only --gpio mode reads the pin numbers;
+# --simulate ignores them and pretends every pump works perfectly.
+
+server:
+  host: 0.0.0.0     # 0.0.0.0 so the phone on the LAN can reach it, not just localhost
+  port: 8080
+  token: null       # set a string to require X-Bartender-Token on /api/v1 requests
+
+machine:
+  id: bartender-01
+  name: Smart Bartender De-Luxe
+  max_pour_ml: 250  # total volume ceiling for one drink; match the glass on the tray
+
+# `pump` is 1-based and matches the slot numbers in the app.
+# `bottle_id` must be an id from the app's BottleCatalog (vodka, light_rum, lime_juice, ...),
+# or null for an empty slot. The app overwrites these via PUT /api/v1/slots anyway —
+# they are just the boot-up default.
+#
+# `ml_per_s` is measured, not guessed:
+#   curl -X POST http://localhost:8080/api/v1/pumps/1/jog -d '{"seconds":10}'
+#   ... catch the output in a measuring cup ...
+#   ml_per_s = measured_ml / 10
+# Do it per pump. They will not match each other.
+
+pumps:
+  - { pump: 1, gpio: 17, ml_per_s: 12.5, bottle_id: vodka }
+  - { pump: 2, gpio: 27, ml_per_s: 12.5, bottle_id: light_rum }
+  - { pump: 3, gpio: 22, ml_per_s: 11.0, bottle_id: lime_juice }
+  - { pump: 4, gpio: 23, ml_per_s: 18.0, bottle_id: cola }
+
+# Most relay boards are active-low: the pin goes LOW to close the relay.
+# If your pumps run when they should be idle, flip this.
+pump_active_high: false
+
+led:
+  type: ws2812      # ws2812 (addressable strip) or none
+  gpio: 18          # WS2812 needs PWM0: GPIO 18 or 12
+  count: 24
+  brightness: 0.6

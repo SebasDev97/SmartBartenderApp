@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Your machine's pins and calibration. config.example.yaml is the one that's tracked.
+config.yaml
