@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The bartender machine sends plain HTTP on the local network, and Android has blocked
+    cleartext by default since API 28. Without this every request to the Pi fails with
+    "CLEARTEXT communication to ... not permitted by network security policy", which looks
+    exactly like the machine being offline.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
