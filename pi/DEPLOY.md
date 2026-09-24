@@ -17,13 +17,15 @@ is the day-to-day reference. This file is just the deployment walk-through.
 - The Arduino IDE on your computer, to flash the sketch once (step 6).
 - Python 3.9 or newer (`python3 --version`). Raspberry Pi OS Bookworm ships 3.11.
 - The Pi's IP address. Get it with `hostname -I` on the Pi.
+- The username you picked in Raspberry Pi Imager. Raspberry Pi OS has had no default `pi`
+  user since 2022, so `<user>` below means yours.
 
 **Give the Pi a fixed address now**, before anything else — a DHCP reservation in your
 router, pinned to the Pi's MAC. Otherwise its IP moves on a reboot and the app looks broken
 when nothing is actually wrong.
 
 ```bash
-ssh pi@raspberrypi.local     # or pi@<the IP>
+ssh <user>@raspberrypi.local     # or <user>@<the IP>
 python3 --version
 hostname -I
 ```
@@ -47,8 +49,11 @@ cd ~/SmartBartender/pi
 ```bash
 # run this on your Mac, not on the Pi
 rsync -av --exclude '.venv' --exclude '__pycache__' --exclude '.pytest_cache' \
-  ~/AndroidStudioProjects/SmartBartender/pi/ pi@raspberrypi.local:~/SmartBartender/pi/
+  ~/AndroidStudioProjects/SmartBartender/pi/ <user>@raspberrypi.local:~/SmartBartender/pi/
 ```
+
+Keep the `--exclude '.venv'`. A venv built on the Mac points at the Mac's Python and cannot
+run on the Pi; step 2 builds one on the Pi itself.
 
 ---
 
@@ -126,17 +131,22 @@ If the button is greyed out, the app is not connected — check step 3 first.
 
 ## Step 5 — Keep it running on boot
 
+`bartender.service` is a template: it has `@USER@` and `@DIR@` where your username and the
+`pi/` folder go. Fill them in while installing it — from the `pi/` folder, as your normal user
+(not after `sudo -i`, or it will say `root`):
+
 ```bash
-sudo cp bartender.service /etc/systemd/system/
-sudo nano /etc/systemd/system/bartender.service
+cd ~/SmartBartender/pi
+ls .venv/bin/python        # must exist — if not, do step 2 first
+sed -e "s|@USER@|$USER|g" -e "s|@DIR@|$PWD|g" bartender.service \
+  | sudo tee /etc/systemd/system/bartender.service
 ```
 
-**Edit `WorkingDirectory` and `ExecStart`** to the path you actually used. The file ships
-pointing at `/home/pi/SmartBartender/pi`; if you put it elsewhere, it will not start.
+`tee` prints the installed unit; check that `User=`, `WorkingDirectory=` and `ExecStart=`
+show your username and your real path. Run it again whenever you move the folder.
 
-The unit runs as `pi`, which on Raspberry Pi OS is already in the `dialout` group that may
-open the Arduino's serial port. If your user is called something else, change `User=` and
-check it with `groups` — see step 6.
+The imager's user is already in the `dialout` group that may open the Arduino's serial
+port — check it with `groups`, see step 6.
 
 ```bash
 sudo systemctl daemon-reload
@@ -253,8 +263,13 @@ current IP (`hostname -I`).
 The Pi's IP almost certainly moved. Give it a DHCP reservation (step 0).
 
 **`systemctl status bartender` shows a failure.**
-Nine times out of ten the paths in the unit file were not edited (step 5). Check with
-`journalctl -u bartender -n 30`.
+Check with `journalctl -u bartender -n 30`.
+
+**The log says `status=203/EXEC` or `Failed to locate executable .../.venv/bin/python`.**
+systemd can't find the venv's Python. Either the unit points at the wrong user or folder
+(re-run the install in step 5 from the right folder), or there is no venv there (step 2).
+If `readlink -f .venv/bin/python` shows a Mac path such as `/opt/homebrew/...`, the venv was
+copied from your computer: `rm -rf .venv` and redo step 2 on the Pi.
 
 **Pumps run when idle, or don't run at all.**
 `PUMP_ACTIVE_HIGH` in the sketch is the wrong way round for your relay board. Flip it and

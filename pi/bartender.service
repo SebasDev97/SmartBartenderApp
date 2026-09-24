@@ -1,11 +1,14 @@
-# Install:
-#   sudo cp bartender.service /etc/systemd/system/
+# A template, not a unit file: @USER@ and @DIR@ are filled in at install time. Run from the
+# pi/ folder on the Pi, as the user the service should run as (not after `sudo -i`):
+#
+#   sed -e "s|@USER@|$USER|g" -e "s|@DIR@|$PWD|g" bartender.service \
+#     | sudo tee /etc/systemd/system/bartender.service
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now bartender
 #   journalctl -u bartender -f
 #
-# User= needs read/write on the Arduino's serial port: on Raspberry Pi OS the default user
-# is already in the `dialout` group, which is all it takes. No root required.
+# User= needs read/write on the Arduino's serial port: on Raspberry Pi OS the user created
+# by the imager is already in the `dialout` group, which is all it takes. No root required.
 [Unit]
 Description=Smart Bartender machine service
 After=network-online.target
@@ -13,9 +16,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/SmartBartender/pi
-ExecStart=/home/pi/SmartBartender/pi/.venv/bin/python -m app.main --arduino --config config.yaml
+User=@USER@
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/.venv/bin/python -m app.main --arduino --config config.yaml
 Restart=on-failure
 RestartSec=3
 
