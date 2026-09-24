@@ -68,7 +68,7 @@ class Machine:
         self._slots: list[Slot] = [
             Slot(pump=p.pump, bottle_id=p.bottle_id, ml_per_second=p.ml_per_s) for p in config.pumps
         ]
-        self._leds = LedController(backend, pixel_count=config.led.count)
+        self._leds = LedController(backend)
         self._jobs: OrderedDict[str, PourJob] = OrderedDict()
         self._current: Optional[PourJob] = None
         self._task: Optional[asyncio.Task] = None
@@ -79,6 +79,7 @@ class Machine:
     # ------------------------------------------------------------------ lifecycle
 
     async def start(self) -> None:
+        await self._backend.start()
         await self._leds.start()
 
     async def stop(self) -> None:
@@ -87,6 +88,7 @@ class Machine:
             self._task.cancel()
         await self._leds.stop()
         await self._backend.stop_all()
+        await self._backend.close()
 
     # ------------------------------------------------------------------ state
 

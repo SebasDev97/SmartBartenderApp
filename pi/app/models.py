@@ -160,7 +160,7 @@ class MachineStatus(Wire):
     machine_id: str
     name: str
     firmware: str
-    backend: Literal["simulated", "gpio"]
+    backend: Literal["simulated", "arduino"]
     state: MachineState
     pump_count: int
     max_pour_ml: float

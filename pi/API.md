@@ -1,7 +1,7 @@
 # Smart Bartender — machine API
 
-The contract between the **Android app** and the **Raspberry Pi** that drives the pumps and the
-LED strip. Both sides are written from this document; if the two disagree, this file wins.
+The contract between the **Android app** and the **Raspberry Pi** that runs the pumps and the
+LED strip (through an Arduino on USB — invisible at this level). Both sides are written from this document; if the two disagree, this file wins.
 
 - **Base URL** — `http://<pi-address>:8080`
 - **Version prefix** — `/api/v1` (only `/healthz` sits outside it)
@@ -60,7 +60,7 @@ The complete state of the machine. Returned by `GET /api/v1/status`, and pushed 
 | Field                 | Type                        | Notes                                                                  |
 |-----------------------|-----------------------------|------------------------------------------------------------------------|
 | `machineId`           | string                      | Stable id from `config.yaml`.                                          |
-| `backend`             | `simulated` \| `gpio`       | Whether real pins are being driven. The app shows this.                |
+| `backend`             | `simulated` \| `arduino`    | Whether real pumps are being driven. The app shows this.               |
 | `state`               | `idle` \| `busy` \| `fault` | `busy` while a job runs.                                               |
 | `pumpCount`           | int                         | Always 4 on this machine; the app's `BottleCatalog.MAX_SLOTS`.         |
 | `maxPourMl`           | float                       | Total volume ceiling for one drink. The app scales a plan down to fit. |

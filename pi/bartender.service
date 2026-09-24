@@ -4,8 +4,8 @@
 #   sudo systemctl enable --now bartender
 #   journalctl -u bartender -f
 #
-# Note on User=: driving a WS2812 strip through rpi_ws281x needs root. If you have no
-# strip (led.type: none in config.yaml), change this to User=pi.
+# User= needs read/write on the Arduino's serial port: on Raspberry Pi OS the default user
+# is already in the `dialout` group, which is all it takes. No root required.
 [Unit]
 Description=Smart Bartender machine service
 After=network-online.target
@@ -13,9 +13,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=pi
 WorkingDirectory=/home/pi/SmartBartender/pi
-ExecStart=/home/pi/SmartBartender/pi/.venv/bin/python -m app.main --gpio --config config.yaml
+ExecStart=/home/pi/SmartBartender/pi/.venv/bin/python -m app.main --arduino --config config.yaml
 Restart=on-failure
 RestartSec=3
 

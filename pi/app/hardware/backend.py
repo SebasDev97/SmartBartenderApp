@@ -1,8 +1,9 @@
-"""The whole hardware surface, in six methods.
+"""The whole hardware surface, in eight methods.
 
-The machine isn't built yet, so everything above this line is written against the Protocol
-and nothing else. Swapping a relay board for a motor-driver HAT, or dropping in someone
-else's working GPIO code, means writing one new class — nothing else in the service moves.
+Everything above this line is written against the Protocol and nothing else. The Pi drives
+no pins itself — the real backend (arduino.py) talks to an Arduino over USB — so changing how
+the machine is wired means changing that sketch, or writing one new class here; nothing else
+in the service moves.
 """
 
 from __future__ import annotations
@@ -15,13 +16,19 @@ from ..models import LedState
 
 @dataclass
 class BackendInfo:
-    name: str  # "simulated" | "gpio" — reported as MachineStatus.backend
+    name: str  # "simulated" | "arduino" — reported as MachineStatus.backend
     pump_count: int
     has_leds: bool
 
 
 @runtime_checkable
 class HardwareBackend(Protocol):
+    async def start(self) -> None:
+        """Called once, inside the event loop, before anything else. May raise."""
+
+    async def close(self) -> None:
+        """Called once on shutdown, after stop_all."""
+
     async def start_pump(self, pump: int) -> None: ...
 
     async def stop_pump(self, pump: int) -> None: ...

@@ -18,6 +18,12 @@ class SimulatedBackend:
         self._pump_count = pump_count
         self.running: set[int] = set()
 
+    async def start(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
     async def start_pump(self, pump: int) -> None:
         self.running.add(pump)
         log.info("pump %d ON", pump)

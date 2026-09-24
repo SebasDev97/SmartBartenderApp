@@ -34,17 +34,19 @@ class MachineConfig:
 @dataclass
 class PumpConfig:
     pump: int
-    gpio: int
     ml_per_s: float = 12.5
     bottle_id: Optional[str] = None
 
 
 @dataclass
+class ArduinoConfig:
+    port: str = "/dev/ttyACM0"
+    baud: int = 9600  # must match BAUD in firmware/bartender/bartender.ino
+
+
+@dataclass
 class LedConfig:
-    type: str = "ws2812"
-    gpio: int = 18
-    count: int = 24
-    brightness: float = 0.6
+    brightness: float = 0.6  # ceiling; the app's brightness is scaled under it
 
 
 @dataclass
@@ -52,7 +54,7 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     machine: MachineConfig = field(default_factory=MachineConfig)
     pumps: list[PumpConfig] = field(default_factory=list)
-    pump_active_high: bool = False
+    arduino: ArduinoConfig = field(default_factory=ArduinoConfig)
     led: LedConfig = field(default_factory=LedConfig)
 
     @property
@@ -65,7 +67,7 @@ class Config:
 
 def default_pumps() -> list[PumpConfig]:
     """Four slots, matching BottleCatalog.MAX_SLOTS, with no bottles loaded."""
-    return [PumpConfig(pump=n, gpio=pin) for n, pin in enumerate((17, 27, 22, 23), start=1)]
+    return [PumpConfig(pump=n) for n in range(1, 5)]
 
 
 def load_config(path: Optional[Union[str, Path]]) -> Config:
@@ -81,6 +83,6 @@ def load_config(path: Optional[Union[str, Path]]) -> Config:
         server=ServerConfig(**raw.get("server", {})),
         machine=MachineConfig(**raw.get("machine", {})),
         pumps=pumps,
-        pump_active_high=raw.get("pump_active_high", False),
+        arduino=ArduinoConfig(**raw.get("arduino", {})),
         led=LedConfig(**raw.get("led", {})),
     )

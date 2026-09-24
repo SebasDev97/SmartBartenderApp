@@ -1,7 +1,9 @@
 # Smart Bartender — machine service
 
 The Raspberry Pi half of the project. It owns the pumps and the LED strip; the Android app
-owns the recipes. They meet at the HTTP + WebSocket contract in **[API.md](API.md)** — read
+owns the recipes. The Pi drives no pins itself: the pumps and the strip hang off an **Arduino
+on USB**, running the sketch in `firmware/bartender/`, and the Pi tells it what to do over
+serial. They meet at the HTTP + WebSocket contract in **[API.md](API.md)** — read
 that first, it is the document both sides are written from.
 
 The service runs perfectly well with no hardware attached, which is the point: the app can be
@@ -20,14 +22,12 @@ python3 -m venv .venv
 # --speed 4 divides every delay, so a full drink takes a couple of seconds.
 .venv/bin/python -m app.main --simulate --speed 4 --port 8080
 
-# On the real machine.
-.venv/bin/pip install -r requirements-gpio.txt
-cp config.example.yaml config.yaml    # then edit the pins
-.venv/bin/python -m app.main --gpio --config config.yaml
+# On the real machine, with the Arduino plugged in and flashed.
+cp config.example.yaml config.yaml    # then set arduino.port
+.venv/bin/python -m app.main --arduino --config config.yaml
 ```
 
-Python 3.9 or newer. `gpiozero` and `rpi_ws281x` are imported lazily inside `GpioBackend`, so
-`--simulate` never needs them.
+Python 3.9 or newer.
 
 Then point the app at it: **Settings → Machine link**. From the Android emulator the host
 machine is **`10.0.2.2`**, not `localhost`. From a physical phone, use the computer's LAN
@@ -50,7 +50,9 @@ API.md ends with a full curl cookbook, including a Margarita.
 ```
 
 `tests/test_api.py` drives the contract over HTTP; `tests/test_pour_job.py` drives the pour
-state machine directly, including that a crash mid-pour still stops every pump.
+state machine directly, including that a crash mid-pour still stops every pump;
+`tests/test_arduino.py` pins the serial protocol against a fake board — retries, a pulled
+cable, reconnecting, and a whole pour.
 
 ## Layout
 
@@ -63,19 +65,40 @@ state machine directly, including that a crash mid-pour still stops every pump.
 | `app/api.py` | The routes and the `/events` WebSocket |
 | `app/leds.py` | The LED show, ported from the app's `Led.kt` so phone and strip match |
 | `app/events.py` | Fan-out to every connected client |
-| `app/hardware/backend.py` | Six methods. The entire hardware surface |
+| `app/hardware/backend.py` | Eight methods. The entire hardware surface |
 | `app/hardware/simulated.py` | Logs instead of pouring. The default |
-| `app/hardware/gpio.py` | Real pins. The only file that changes when hardware changes |
+| `app/hardware/arduino.py` | The serial link to the Arduino: retries, heartbeat, reconnect |
+| `firmware/bartender/bartender.ino` | The Arduino sketch. Pins, relay polarity, LED animations, and the serial protocol |
 
 ## Wiring
 
-`config.yaml` holds the GPIO pin per pump. Nothing else in the service knows a pin number.
+```
+phone ──Wi-Fi──▶ Raspberry Pi ──USB serial──▶ Arduino ──▶ relays ──▶ pumps
+                                                      └──▶ WS2812 strip
+```
+
+**Pin numbers live only in the sketch** — `PUMP_PINS`, `LED_PIN` and `LED_COUNT` at the top of
+`bartender.ino`. The Pi addresses pumps by number (1–4) and never learns a pin. Change the
+wiring, change the sketch, flash it; the service does not move.
 
 Most relay boards are **active-low** — the pin goes LOW to close the relay. If your pumps run
-when they should be idle, flip `pump_active_high`.
+when they should be idle, flip `PUMP_ACTIVE_HIGH` in the sketch.
 
-A WS2812 strip needs PWM0, so **GPIO 18 or 12**. Pumps must have their own supply; a Pi cannot
-drive a motor from its 5 V rail, and back-EMF from a DC motor will reset the board or worse.
+The sketch must drive at least as many pumps as `config.yaml` lists; the service checks this
+at connect time and refuses to start otherwise.
+
+Pumps must have their own supply; neither board can drive a motor from its 5 V rail, and
+back-EMF from a DC motor will reset the Arduino or worse. Tie the grounds together.
+
+### The serial link
+
+Plain text at 9600 baud, one command per line, one `OK`/`ERR` reply each — the full protocol
+is the comment at the top of `bartender.ino`. You can drive it by hand from the Arduino IDE's
+Serial Monitor (newline line ending) with `HELLO`, `ON 1`, `STOP`, `LED SPECTRUM 7000 150`.
+
+Opening the port resets most Arduinos, so the service waits two seconds for the bootloader
+before its first `HELLO`. If the cable is pulled mid-run, the next command reopens the port
+by itself; if the Arduino is missing at startup, the service exits and systemd retries.
 
 ## Calibrating the pumps
 
@@ -102,6 +125,10 @@ is exactly where a 15 ml pour lives.
 Every pour is wrapped in `try / finally: await backend.stop_all()`. An exception, a
 cancellation, a client vanishing mid-pour — every pump stops. `tests/test_pour_job.py` has a
 test for it. Do not remove that `finally`.
+
+That `finally` cannot help when the Pi itself dies, or the USB cable comes out mid-pour, so the
+sketch has a **watchdog**: the service pings the Arduino four times a second, and if 1.5
+seconds pass with no command, the Arduino stops every pump on its own.
 
 A dropped WebSocket does **not** abort a pour: the machine finishes the drink and the app
 re-attaches when it returns. A Wi-Fi hiccup should not leave half a Margarita in the glass.

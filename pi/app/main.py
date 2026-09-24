@@ -1,7 +1,7 @@
 """Entry point.
 
     python -m app.main --simulate --speed 4        # laptop, no hardware
-    python -m app.main --gpio --config config.yaml # the real machine
+    python -m app.main --arduino --config config.yaml  # the real machine
 """
 
 from __future__ import annotations
@@ -26,10 +26,10 @@ def build(args: argparse.Namespace):
     if args.port:
         config.server.port = args.port
 
-    if args.gpio:
-        from .hardware.gpio import GpioBackend  # imported here so a laptop never needs gpiozero
+    if args.arduino:
+        from .hardware.arduino import ArduinoBackend
 
-        backend = GpioBackend(config)
+        backend = ArduinoBackend(config)
     else:
         backend = SimulatedBackend(pump_count=config.pump_count)
 
@@ -53,7 +53,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Smart Bartender machine service")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--simulate", action="store_true", help="drive nothing, just log (default)")
-    mode.add_argument("--gpio", action="store_true", help="drive real pumps and LEDs")
+    mode.add_argument(
+        "--arduino", action="store_true", help="drive the real pumps and LEDs through the Arduino"
+    )
     parser.add_argument("--config", help="path to config.yaml")
     parser.add_argument("--host", help="override server.host")
     parser.add_argument("--port", type=int, help="override server.port")
@@ -78,7 +80,7 @@ def main() -> None:
         config.machine.name,
         config.server.host,
         config.server.port,
-        "gpio" if args.gpio else "simulated",
+        "arduino" if args.arduino else "simulated",
         args.speed,
     )
     uvicorn.run(app, host=config.server.host, port=config.server.port, log_level="warning")

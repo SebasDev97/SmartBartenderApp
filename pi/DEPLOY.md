@@ -12,6 +12,9 @@ is the day-to-day reference. This file is just the deployment walk-through.
 ## Step 0 — What you need
 
 - A Raspberry Pi on the same Wi-Fi as the phone, with SSH enabled.
+- An Arduino (Uno or Nano) and a USB cable to the Pi. The pumps' relays and the LED strip are
+  wired to the Arduino, not to the Pi — the Pi drives no pins at all.
+- The Arduino IDE on your computer, to flash the sketch once (step 6).
 - Python 3.9 or newer (`python3 --version`). Raspberry Pi OS Bookworm ships 3.11.
 - The Pi's IP address. Get it with `hostname -I` on the Pi.
 
@@ -59,8 +62,9 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-This installs only FastAPI, uvicorn, pydantic and PyYAML. Nothing GPIO-related yet — that
-comes in step 6, so the service can be proven working before any wiring exists.
+This installs FastAPI, uvicorn, pydantic, PyYAML and pyserial — everything, including what
+talks to the Arduino. Nothing needs to be plugged in yet: steps 3–5 prove the service
+working in simulation before any wiring exists.
 
 Check it:
 
@@ -68,7 +72,7 @@ Check it:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-18 tests should pass. If they do, the pour state machine and the whole API work on this Pi.
+28 tests should pass. If they do, the pour state machine and the whole API work on this Pi.
 
 ---
 
@@ -130,8 +134,9 @@ sudo nano /etc/systemd/system/bartender.service
 **Edit `WorkingDirectory` and `ExecStart`** to the path you actually used. The file ships
 pointing at `/home/pi/SmartBartender/pi`; if you put it elsewhere, it will not start.
 
-While there, if you have no LED strip, change `User=root` to `User=pi` — root is only needed
-for the WS2812 driver.
+The unit runs as `pi`, which on Raspberry Pi OS is already in the `dialout` group that may
+open the Arduino's serial port. If your user is called something else, change `User=` and
+check it with `groups` — see step 6.
 
 ```bash
 sudo systemctl daemon-reload
@@ -140,27 +145,58 @@ systemctl status bartender
 journalctl -u bartender -f       # live log
 ```
 
-Note that the unit runs with `--gpio`. Until you have done step 6, either leave it disabled
-and keep starting the service by hand, or change `ExecStart` to use `--simulate`.
+Note that the unit runs with `--arduino`, and the service **refuses to start without the
+Arduino attached** (systemd retries every 3 seconds). Until you have done step 6, either leave
+it disabled and keep starting the service by hand, or change `ExecStart` to use `--simulate`.
 
 ---
 
-## Step 6 — Hardware
+## Step 6 — Hardware: the Arduino
+
+The Pi never touches a pin. The relays and the LED strip are wired to the Arduino, and the Pi
+talks to it over the USB cable.
+
+**Flash the sketch** (from your computer, once — and again whenever the wiring changes):
+
+1. Open `pi/firmware/bartender/bartender.ino` in the Arduino IDE.
+2. Install **Adafruit NeoPixel** from the Library Manager.
+3. Edit the block at the top to match your wiring: `PUMP_PINS` (pump 1 first), `LED_PIN`,
+   `LED_COUNT` (`0` if there is no strip) and `PUMP_ACTIVE_HIGH`. These are the only pin
+   numbers in the whole project.
+4. Upload it.
+
+Check it before involving the Pi: open the **Serial Monitor** at **9600 baud** with **Newline**
+line endings and type `HELLO`. You want `OK BARTENDER 1.0.0 4 24`. Then `ON 1` should run
+pump 1, `STOP` should stop it — and if you type `ON 1` and then nothing, the pump stops by
+itself after 1.5 seconds. That is the watchdog, and it is supposed to do that.
+
+**Connect it to the Pi** and find its port:
 
 ```bash
-.venv/bin/pip install -r requirements-gpio.txt
+ls /dev/serial/by-id/
+```
+
+You'll see something like `usb-Arduino__www.arduino.cc__0043_...-if00`. Use that full
+`/dev/serial/by-id/...` path rather than `/dev/ttyACM0`: it names the board, so it never
+moves when another USB device is plugged in.
+
+```bash
 cp config.example.yaml config.yaml
-nano config.yaml
+nano config.yaml          # set arduino.port
+groups                    # must include dialout, or the port cannot be opened
 ```
 
-Set the **GPIO pin for each pump**. Nothing else in the service knows a pin number, so this
-file is the only thing that changes when the wiring changes.
+If `dialout` is missing: `sudo usermod -aG dialout $USER`, then log out and back in.
 
-Then:
+**Close the Arduino IDE's Serial Monitor** if it is open anywhere — only one program can hold
+the port. Then:
 
 ```bash
-.venv/bin/python -m app.main --gpio --config config.yaml
+.venv/bin/python -m app.main --arduino --config config.yaml
 ```
+
+The log should say `Arduino on /dev/serial/by-id/...: firmware 1.0.0, 4 pumps, 24 LEDs` and
+the strip should start its spectrum.
 
 ## Step 7 — Calibrate the pumps
 
@@ -221,7 +257,20 @@ Nine times out of ten the paths in the unit file were not edited (step 5). Check
 `journalctl -u bartender -n 30`.
 
 **Pumps run when idle, or don't run at all.**
-`pump_active_high` is the wrong way round for your relay board (step 6).
+`PUMP_ACTIVE_HIGH` in the sketch is the wrong way round for your relay board. Flip it and
+re-flash (step 6).
+
+**`cannot open /dev/...` at startup.**
+Wrong `arduino.port`, the cable is out, or the user is not in `dialout` (step 6).
+
+**`no answer from the bartender sketch`.**
+The port opened but nothing answered `HELLO`: the sketch isn't flashed, the baud rate in
+`config.yaml` doesn't match `BAUD` in the sketch, or the Serial Monitor still has the port.
+
+**The log says `watchdog: no command from the Pi`.**
+The Arduino stopped the pumps because the service went quiet for 1.5 seconds mid-pour —
+the service crashed, or the USB link dropped. Check `journalctl -u bartender` around that
+time.
 
 **A pour is short or long.**
 Calibration (step 7). The service is doing exactly what `ml_per_s` told it to.

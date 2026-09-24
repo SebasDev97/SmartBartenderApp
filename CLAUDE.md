@@ -8,7 +8,8 @@ Android companion app for the "Smart Bartender" cocktail machine (single `:app` 
 Kotlin + Compose), plus the machine's own service in `pi/` (Python + FastAPI). Recipes come
 live from TheCocktailDB v1 using the public test key `1`, baked into the base URL in
 `data/remote/NetworkModule.kt`. Pours and the LED strip run on a Raspberry Pi over HTTP +
-WebSocket; `pi/API.md` is the contract between the two halves and the first thing to read
+WebSocket — the Pi drives no GPIO itself; it commands an Arduino over USB serial, running the
+sketch in `pi/firmware/bartender/`, which owns every pin; `pi/API.md` is the contract between the two halves and the first thing to read
 before changing either side, and `pi/DEPLOY.md` is the walk-through for getting the service
 onto real hardware. `README.md` holds the product-level tour; this file covers what
 you need to change code safely.
@@ -158,3 +159,5 @@ When touching the availability engine or the catalog, extend `AvailabilityTest` 
 
 The machine service has its own suite under `pi/tests/` (`pytest`, `TestClient` +
 `SimulatedBackend`), including a test that a crash mid-pour still stops every pump.
+`test_arduino.py` drives `ArduinoBackend` against a `FakeBoard` that answers like the sketch —
+change the serial protocol in `arduino.py`, `bartender.ino` and that fake together.

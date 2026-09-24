@@ -20,7 +20,7 @@ data class MachineSnapshot(
     val currentJob: PourJob?,
     val fault: MachineFault?,
 ) {
-    val isSimulated: Boolean get() = backend != "gpio"
+    val isSimulated: Boolean get() = backend == "simulated"
 }
 
 enum class MachineRunState { IDLE, BUSY, FAULT, UNKNOWN }
