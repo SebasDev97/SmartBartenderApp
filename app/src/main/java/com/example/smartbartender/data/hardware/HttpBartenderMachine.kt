@@ -173,6 +173,12 @@ class HttpBartenderMachine(
         api.abort("$base/api/v1/pours/$jobId/abort")
     }
 
+    override suspend fun fetchJob(jobId: String): Result<PourJob> {
+        val base = address.takeIf { it.isConfigured }?.httpBase
+            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
+        return runCatching { api.pour("$base/api/v1/pours/$jobId").toDomain() }.mapError()
+    }
+
     override suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit> = command { base ->
         api.putLed(
             url = "$base/api/v1/led",

@@ -5,6 +5,7 @@ import com.example.smartbartender.BuildConfig
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.hardware.HttpBartenderMachine
 import com.example.smartbartender.data.hardware.MachineNetworkModule
+import com.example.smartbartender.data.hardware.PourRecorder
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.data.local.DataStoreBartenderPreferences
 import com.example.smartbartender.data.remote.NetworkModule
@@ -32,4 +33,7 @@ class AppContainer(context: Context) {
                 scope = appScope,
             )
         }
+
+    /** Feeds the Stats tab. Same app-lifetime scope, so a pour is counted even off-screen. */
+    private val pourRecorder = PourRecorder(machine, preferences, appScope)
 }

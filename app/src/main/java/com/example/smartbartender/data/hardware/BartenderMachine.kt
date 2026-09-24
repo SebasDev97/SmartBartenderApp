@@ -29,5 +29,8 @@ interface BartenderMachine {
 
     suspend fun abort(jobId: String): Result<Unit>
 
+    /** A job the machine still remembers (it keeps the last 20), finished or not. */
+    suspend fun fetchJob(jobId: String): Result<PourJob>
+
     suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit>
 }

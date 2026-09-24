@@ -80,6 +80,8 @@ data class PourJob(
     val totalMl: Double,
     val dispensedMl: Double,
     val error: MachineFault?,
+    /** Machine clock, set once the job ends. Null while it is still live. */
+    val finishedAtMs: Long? = null,
 )
 
 /** What the app asks the machine to pour.*/

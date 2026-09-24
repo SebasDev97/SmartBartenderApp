@@ -15,6 +15,8 @@ import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.Favourites
 import com.example.smartbartender.domain.model.MachineAddress
+import com.example.smartbartender.domain.model.PourHistory
+import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.SlotRack
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -25,8 +27,15 @@ import java.io.IOException
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "smart_bartender_settings")
 
 /**
+ * Pour history lives in its own file: it grows to tens of kilobytes, and DataStore rewrites
+ * the whole file on every edit — no reason to pay that on each rack or LED toggle.
+ */
+private val Context.historyStore: DataStore<Preferences> by preferencesDataStore(name = "pour_history")
+
+/**
  * State that must survive an app restart: the rack, the LED show switch, where the machine
- * lives on the network, which pour is in flight, and the user's favourite cocktails.
+ * lives on the network, which pour is in flight, the user's favourite cocktails, and the
+ * pours this phone has made.
  *
  * An interface so the pour logic can be driven in a JVM test without a `Context` or a real
  * DataStore. [DataStoreBartenderPreferences] is the only implementation that ships.
@@ -57,6 +66,9 @@ interface BartenderPreferences {
     /** Starred cocktails, most recently added first. */
     val favourites: Flow<List<CocktailSummary>>
 
+    /** Every pour this phone started that has ended, oldest first. Feeds the Stats tab. */
+    val pourHistory: Flow<List<PourRecord>>
+
     suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean
 
     suspend fun setLoadedBottles(bottleIds: Set<String>)
@@ -70,11 +82,17 @@ interface BartenderPreferences {
     suspend fun setActiveJobId(jobId: String?)
 
     suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean)
+
+    /** Appends [record]. A job already recorded is ignored, so a replayed frame never double-counts. */
+    suspend fun recordPour(record: PourRecord)
+
+    suspend fun clearPourHistory()
 }
 
 class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
 
     private val dataStore = context.applicationContext.dataStore
+    private val historyStore = context.applicationContext.historyStore
 
     private object Keys {
         val LOADED_BOTTLES = stringSetPreferencesKey("loaded_bottles")
@@ -85,13 +103,10 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
         val MACHINE_ENABLED = booleanPreferencesKey("machine_enabled")
         val ACTIVE_JOB_ID = stringPreferencesKey("active_job_id")
         val FAVOURITES = stringPreferencesKey("favourite_cocktails")
+        val POUR_HISTORY = stringPreferencesKey("pour_history")
     }
 
-    private val preferences: Flow<Preferences> = dataStore.data
-        .catch { throwable ->
-            // A corrupt/unreadable file should degrade to defaults, not crash the app.
-            if (throwable is IOException) emit(emptyPreferences()) else throw throwable
-        }
+    private val preferences: Flow<Preferences> = dataStore.data.orEmptyOnIoError()
 
     override val loadedBottleIds: Flow<Set<String>> = preferences.map { prefs ->
         BottleCatalog.clampToCapacity(prefs[Keys.LOADED_BOTTLES] ?: BottleCatalog.defaultSelection)
@@ -125,6 +140,10 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
     override val favourites: Flow<List<CocktailSummary>> = preferences.map { prefs ->
         Favourites.parse(prefs[Keys.FAVOURITES].orEmpty())
     }.distinctUntilChanged()
+
+    override val pourHistory: Flow<List<PourRecord>> = historyStore.data.orEmptyOnIoError()
+        .map { prefs -> PourHistory.parse(prefs[Keys.POUR_HISTORY].orEmpty()) }
+        .distinctUntilChanged()
 
     override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean {
         var changed = false
@@ -196,4 +215,20 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
             prefs[Keys.FAVOURITES] = Favourites.encode(Favourites.toggle(current, cocktail, favourite))
         }
     }
+
+    override suspend fun recordPour(record: PourRecord) {
+        historyStore.edit { prefs ->
+            val current = PourHistory.parse(prefs[Keys.POUR_HISTORY].orEmpty())
+            prefs[Keys.POUR_HISTORY] = PourHistory.encode(PourHistory.append(current, record))
+        }
+    }
+
+    override suspend fun clearPourHistory() {
+        historyStore.edit { prefs -> prefs.remove(Keys.POUR_HISTORY) }
+    }
+}
+
+/** A corrupt/unreadable file should degrade to defaults, not crash the app. */
+private fun Flow<Preferences>.orEmptyOnIoError(): Flow<Preferences> = catch { throwable ->
+    if (throwable is IOException) emit(emptyPreferences()) else throw throwable
 }

@@ -11,6 +11,7 @@ import com.example.smartbartender.domain.model.MachineAddress
 import com.example.smartbartender.domain.model.MachineRunState
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
+import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourRequest
 import com.example.smartbartender.domain.model.StepKind
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +75,10 @@ class MachinePourTest {
             return Result.success(Unit)
         }
 
+        override suspend fun fetchJob(jobId: String): Result<PourJob> =
+            jobs.value?.takeIf { it.jobId == jobId }?.let { Result.success(it) }
+                ?: Result.failure(IllegalStateException("No job $jobId"))
+
         override suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit> {
             ledCommands += enabled
             return Result.success(Unit)
@@ -92,6 +97,7 @@ class MachinePourTest {
         override val machineAddress = MutableStateFlow(MachineAddress("10.0.2.2", 8080, enabled = true))
         override val activeJobId = MutableStateFlow<String?>(null)
         override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
+        override val pourHistory = MutableStateFlow<List<PourRecord>>(emptyList())
 
         override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
         override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
@@ -100,6 +106,8 @@ class MachinePourTest {
         override suspend fun setMachineAddress(host: String, port: Int, enabled: Boolean) = Unit
         override suspend fun setActiveJobId(jobId: String?) { activeJobId.value = jobId }
         override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) = Unit
+        override suspend fun recordPour(record: PourRecord) = Unit
+        override suspend fun clearPourHistory() = Unit
     }
 
     // ------------------------------------------------------------------ tests

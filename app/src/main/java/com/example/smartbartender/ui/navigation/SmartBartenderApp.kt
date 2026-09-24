@@ -48,10 +48,12 @@ import com.example.smartbartender.ui.screens.library.LibraryScreen
 import com.example.smartbartender.ui.screens.library.LibraryViewModel
 import com.example.smartbartender.ui.screens.settings.SettingsScreen
 import com.example.smartbartender.ui.screens.settings.SettingsViewModel
+import com.example.smartbartender.ui.screens.stats.StatsScreen
+import com.example.smartbartender.ui.screens.stats.StatsViewModel
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextPrimary
 
-/** Root composable: bottom navigation over the four tabs, with a pushed detail screen. */
+/** Root composable: bottom navigation over the top-level tabs, with a pushed detail screen. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmartBartenderApp() {
@@ -70,6 +72,7 @@ fun SmartBartenderApp() {
             TopLevelDestination.AVAILABLE -> "Smart Bartender"
             TopLevelDestination.LIBRARY -> "Library"
             TopLevelDestination.BOTTLES -> "Bottles"
+            TopLevelDestination.STATS -> "Stats"
             TopLevelDestination.SETTINGS -> "Settings"
         }
     } ?: ""
@@ -167,6 +170,20 @@ fun SmartBartenderApp() {
                         onEjectSlot = viewModel::ejectSlot,
                         onEjectAll = viewModel::ejectAll,
                         onLoadDefaults = viewModel::loadDefaults,
+                        contentPadding = innerPadding,
+                    )
+                }
+
+                composable(Routes.STATS) {
+                    val viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory)
+                    val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    StatsScreen(
+                        state = state,
+                        led = led,
+                        onCocktailClick = { id -> navController.navigate(Routes.detail(id)) },
+                        onResetRequest = viewModel::requestReset,
+                        onResetConfirm = viewModel::confirmReset,
+                        onResetDismiss = viewModel::dismissReset,
                         contentPadding = innerPadding,
                     )
                 }

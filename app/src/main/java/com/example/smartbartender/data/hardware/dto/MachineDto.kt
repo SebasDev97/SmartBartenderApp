@@ -117,6 +117,7 @@ data class PourJobDto(
     val totalMl: Double = 0.0,
     val dispensedMl: Double = 0.0,
     val error: FaultDto? = null,
+    val finishedAtMs: Long? = null,
 ) {
     fun toDomain() = PourJob(
         jobId = jobId,
@@ -137,6 +138,7 @@ data class PourJobDto(
         totalMl = totalMl,
         dispensedMl = dispensedMl,
         error = error?.toDomain(),
+        finishedAtMs = finishedAtMs,
     )
 }
 

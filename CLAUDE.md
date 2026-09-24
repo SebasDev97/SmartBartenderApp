@@ -127,6 +127,23 @@ millilitres. TheCocktailDB measures are free text (`"1 1/2 oz"`, `"2-3 oz"`, `"F
 so every guess lives there, in one place, with a test. Ranges take their **lower** bound on
 purpose. `MAX_ITEM_ML` caps a single pour whatever the parser says.
 
+### Pour statistics (`domain/model/PourHistory.kt`, `PourStats.kt`, `data/hardware/PourRecorder.kt`)
+
+The Stats tab is recorded **on the phone**, not on the Pi, so it counts only pours this phone
+started: `PourRecorder` records a terminal job only when its id equals the persisted
+`activeJobId`. Like `HttpBartenderMachine` it lives in the app-scoped `CoroutineScope`, so a
+drink is counted even if nobody is on the detail screen. If the app was killed mid-pour, it
+catches up on the next connect through `fetchJob` (`GET /api/v1/pours/{jobId}`; the Pi keeps its
+last 20 jobs).
+
+Volumes come from each pour step's `dispensedMl`, not the planned `ml`, so a stopped pour
+counts only what came out. Pumps are mapped to bottles positionally, the same way as the slot
+rack. Nothing can measure what's left in a bottle, so keep stats to what the pumps poured.
+History is stored as one JSON string in its own DataStore file (`pour_history`), capped at
+`PourHistory.MAX_RECORDS`, and `append` ignores a jobId it already holds. All the arithmetic
+is in the pure `PourStats.compute()`. It uses `java.util.Calendar`, because minSdk 24 has no
+`java.time` and desugaring isn't enabled.
+
 ### LED show
 
 `rememberLedState()` in `ui/components/Led.kt` is created **once**, at the root in
@@ -149,7 +166,7 @@ hand-written fakes — there is no mocking library, and `AvailabilityTest`'s `Fa
 pattern to copy. They cover ingredient normalisation and alias resolution, the 15-slot
 ingredient/measure pairing, both miss-response shapes, the four-slot clamp,
 can-make/almost/not-shown classification, measure parsing, pour planning, slot ordering,
-favourites storage and search, the pour reducer, and the machine contract through a `FakeMachine`/`FakePreferences` pair.
+favourites storage and search, pour history and statistics, the pour recorder, the pour reducer, and the machine contract through a `FakeMachine`/`FakePreferences` pair.
 `BartenderPreferences` is an interface for that last reason; `DataStoreBartenderPreferences` is
 the only implementation that ships.
 
