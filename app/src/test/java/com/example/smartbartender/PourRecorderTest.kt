@@ -4,6 +4,7 @@ import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.hardware.PourRecorder
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
@@ -63,6 +64,7 @@ class PourRecorderTest {
         override val activeJobId = MutableStateFlow<String?>(null)
         override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
         override val pourHistory = MutableStateFlow<List<PourRecord>>(emptyList())
+        override val customDrinks = MutableStateFlow<List<CustomDrink>>(emptyList())
 
         override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
         override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
@@ -78,6 +80,8 @@ class PourRecorderTest {
         }
 
         override suspend fun clearPourHistory() { pourHistory.value = emptyList() }
+        override suspend fun saveCustomDrink(drink: CustomDrink) = Unit
+        override suspend fun deleteCustomDrink(id: String) = Unit
     }
 
     private fun TestScope.recorder(machine: FakeMachine, preferences: FakePreferences) {

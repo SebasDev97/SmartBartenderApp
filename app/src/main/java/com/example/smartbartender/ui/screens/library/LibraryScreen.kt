@@ -11,18 +11,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.SearchOff
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -38,18 +43,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.ui.components.CocktailGridCard
 import com.example.smartbartender.ui.components.CocktailGridSkeleton
 import com.example.smartbartender.ui.components.EmptyState
 import com.example.smartbartender.ui.components.ErrorState
 import com.example.smartbartender.ui.components.LedState
+import com.example.smartbartender.ui.theme.NeonAmber
 import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.NeonMagenta
+import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
 
-/** Browse the whole book or just the favourites, and search either by name. */
+/** Browse the whole book, the favourites or the user's own drinks, and search any of them by name. */
 @Composable
 fun LibraryScreen(
     state: LibraryUiState,
@@ -57,8 +65,9 @@ fun LibraryScreen(
     onQueryChange: (String) -> Unit,
     onClearQuery: () -> Unit,
     onCocktailClick: (String) -> Unit,
-    onShowFavouritesChange: (Boolean) -> Unit,
+    onFilterChange: (LibraryFilter) -> Unit,
     onFavouriteChange: (CocktailSummary, Boolean) -> Unit,
+    onCreateDrink: () -> Unit,
     onSurpriseMe: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -84,7 +93,14 @@ fun LibraryScreen(
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 placeholder = {
-                    Text(if (state.showFavourites) "Search favourites" else "Search cocktails", color = TextSecondary)
+                    Text(
+                        text = when (state.filter) {
+                            LibraryFilter.ALL -> "Search cocktails"
+                            LibraryFilter.FAVOURITES -> "Search favourites"
+                            LibraryFilter.MINE -> "Search my drinks"
+                        },
+                        color = TextSecondary,
+                    )
                 },
                 leadingIcon = {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = accent)
@@ -120,12 +136,13 @@ fun LibraryScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(
-                selected = !state.showFavourites,
-                onClick = { onShowFavouritesChange(false) },
+                selected = state.filter == LibraryFilter.ALL,
+                onClick = { onFilterChange(LibraryFilter.ALL) },
                 label = { Text("All") },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = accent.copy(alpha = 0.16f),
@@ -133,16 +150,20 @@ fun LibraryScreen(
                 ),
             )
             FilterChip(
-                selected = state.showFavourites,
-                onClick = { onShowFavouritesChange(true) },
+                selected = state.filter == LibraryFilter.FAVOURITES,
+                onClick = { onFilterChange(LibraryFilter.FAVOURITES) },
                 label = {
                     Text(
-                        if (state.favourites.isEmpty()) "Favourites" else "Favourites (${state.favourites.size})",
+                        if (state.favouriteCount == 0) "Favourites" else "Favourites (${state.favouriteCount})",
                     )
                 },
                 leadingIcon = {
                     Icon(
-                        imageVector = if (state.showFavourites) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        imageVector = if (state.filter == LibraryFilter.FAVOURITES) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
                         contentDescription = null,
                         modifier = Modifier.size(FilterChipDefaults.IconSize),
                     )
@@ -151,6 +172,25 @@ fun LibraryScreen(
                     selectedContainerColor = NeonMagenta.copy(alpha = 0.16f),
                     selectedLabelColor = NeonMagenta,
                     selectedLeadingIconColor = NeonMagenta,
+                ),
+            )
+            FilterChip(
+                selected = state.filter == LibraryFilter.MINE,
+                onClick = { onFilterChange(LibraryFilter.MINE) },
+                label = {
+                    Text(if (state.customDrinks.isEmpty()) "My drinks" else "My drinks (${state.customDrinks.size})")
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Science,
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NeonAmber.copy(alpha = 0.16f),
+                    selectedLabelColor = NeonAmber,
+                    selectedLeadingIconColor = NeonAmber,
                 ),
             )
         }
@@ -164,13 +204,53 @@ fun LibraryScreen(
 
         Box(Modifier.fillMaxSize()) {
             when {
-                // Favourites come from storage, so the network's loading and error states
-                // have nothing to say about them.
-                state.showFavourites -> if (state.visibleFavourites.isEmpty()) {
+                // Favourites and custom drinks come from storage, so the network's loading
+                // and error states have nothing to say about them.
+                state.filter == LibraryFilter.MINE -> if (state.visibleMyDrinks.isEmpty()) {
+                    EmptyState(
+                        icon = Icons.Outlined.Science,
+                        title = if (state.customDrinks.isEmpty()) "No drinks of your own yet" else "No matches",
+                        message = if (state.customDrinks.isEmpty()) {
+                            "Pick up to ${BottleCatalog.MAX_SLOTS} bottles, set the millilitres, and the machine pours it your way."
+                        } else {
+                            "None of your drinks is called \"${state.query}\"."
+                        },
+                        actionLabel = if (state.customDrinks.isEmpty()) "Create a drink" else null,
+                        onAction = onCreateDrink,
+                        accent = NeonAmber,
+                    )
+                } else {
+                    CocktailGrid(
+                        cocktails = state.visibleMyDrinks,
+                        favouriteIds = state.favouriteIds,
+                        accent = accent,
+                        onCocktailClick = onCocktailClick,
+                        onFavouriteChange = onFavouriteChange,
+                        // Room under the last row so the button never covers a card.
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 8.dp,
+                            bottom = contentPadding.calculateBottomPadding() + 96.dp,
+                        ),
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = onCreateDrink,
+                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        text = { Text("New drink") },
+                        containerColor = NeonAmber,
+                        contentColor = Obsidian,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
+                    )
+                }
+
+                state.filter == LibraryFilter.FAVOURITES -> if (state.visibleFavourites.isEmpty()) {
                     EmptyState(
                         icon = Icons.Outlined.FavoriteBorder,
-                        title = if (state.favourites.isEmpty()) "No favourites yet" else "No matches",
-                        message = if (state.favourites.isEmpty()) {
+                        title = if (state.favouriteCount == 0) "No favourites yet" else "No matches",
+                        message = if (state.favouriteCount == 0) {
                             "Tap the heart on any cocktail to keep it here."
                         } else {
                             "None of your favourites is called \"${state.query}\"."

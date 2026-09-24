@@ -57,7 +57,9 @@ fun AvailableScreen(
 
             state.isLoading -> CocktailListSkeleton(modifier = Modifier.padding(contentPadding))
 
-            state.errorMessage != null -> ErrorState(
+            // Custom drinks don't need the network, so a failed fetch only blanks the screen
+            // when there is nothing of the user's own to show either.
+            state.errorMessage != null && state.isEmptyResult -> ErrorState(
                 message = state.errorMessage,
                 onRetry = onRetry,
                 modifier = Modifier.padding(contentPadding),

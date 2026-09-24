@@ -42,6 +42,9 @@ import com.example.smartbartender.ui.screens.available.AvailableScreen
 import com.example.smartbartender.ui.screens.available.AvailableViewModel
 import com.example.smartbartender.ui.screens.bottles.BottlesScreen
 import com.example.smartbartender.ui.screens.bottles.BottlesViewModel
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorActions
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorScreen
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorViewModel
 import com.example.smartbartender.ui.screens.detail.DetailScreen
 import com.example.smartbartender.ui.screens.detail.DetailViewModel
 import com.example.smartbartender.ui.screens.library.LibraryScreen
@@ -67,7 +70,10 @@ fun SmartBartenderApp() {
     val led = rememberLedState(enabled = settingsState.ledShowEnabled)
 
     val isTopLevel = TopLevelDestination.entries.any { it.route == currentRoute }
-    val title = TopLevelDestination.entries.firstOrNull { it.route == currentRoute }?.let {
+    val isPushed = currentRoute == Routes.DETAIL || currentRoute == Routes.CUSTOM_EDIT
+    val title = if (currentRoute == Routes.CUSTOM_EDIT) {
+        if (backStackEntry?.arguments?.getString("drinkId") == null) "New drink" else "Edit drink"
+    } else TopLevelDestination.entries.firstOrNull { it.route == currentRoute }?.let {
         when (it) {
             TopLevelDestination.AVAILABLE -> "Smart Bartender"
             TopLevelDestination.LIBRARY -> "Library"
@@ -82,7 +88,7 @@ fun SmartBartenderApp() {
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
-                if (currentRoute != Routes.DETAIL) {
+                if (!isPushed) {
                     TopAppBar(
                         title = {
                             Text(
@@ -95,7 +101,13 @@ fun SmartBartenderApp() {
                     )
                 } else {
                     TopAppBar(
-                        title = {},
+                        title = {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        },
                         navigationIcon = {
                             IconButton(onClick = { navController.popBackStack() }) {
                                 Icon(
@@ -152,8 +164,9 @@ fun SmartBartenderApp() {
                         onQueryChange = viewModel::onQueryChange,
                         onClearQuery = viewModel::clearQuery,
                         onCocktailClick = { id -> navController.navigate(Routes.detail(id)) },
-                        onShowFavouritesChange = viewModel::setShowFavourites,
+                        onFilterChange = viewModel::setFilter,
                         onFavouriteChange = viewModel::setFavourite,
+                        onCreateDrink = { navController.navigate(Routes.customEdit()) },
                         onSurpriseMe = { viewModel.surpriseMe { id -> navController.navigate(Routes.detail(id)) } },
                         onRetry = viewModel::retry,
                         contentPadding = innerPadding,
@@ -213,9 +226,65 @@ fun SmartBartenderApp() {
                         led = led,
                         onStartPreparation = viewModel::startPreparation,
                         onToggleFavourite = viewModel::toggleFavourite,
+                        onEdit = { state.cocktail?.let { navController.navigate(Routes.customEdit(it.id)) } },
                         onCancelPreparation = viewModel::cancelPreparation,
                         onFinishAcknowledged = viewModel::acknowledgePreparation,
                         onRetry = viewModel::retry,
+                        contentPadding = innerPadding,
+                    )
+                }
+
+                composable(
+                    route = Routes.CUSTOM_EDIT,
+                    arguments = listOf(
+                        navArgument("drinkId") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+                ) {
+                    val viewModel: CustomDrinkEditorViewModel = viewModel(factory = CustomDrinkEditorViewModel.factory())
+                    val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    CustomDrinkEditorScreen(
+                        state = state,
+                        led = led,
+                        actions = CustomDrinkEditorActions(
+                            onNameChange = viewModel::onNameChange,
+                            onEmojiChange = viewModel::onEmojiChange,
+                            onColourChange = viewModel::onColourChange,
+                            onNotesChange = viewModel::onNotesChange,
+                            onAddItem = viewModel::addItem,
+                            onRemoveItem = viewModel::removeItem,
+                            onMoveItem = viewModel::moveItem,
+                            onMlTextChange = viewModel::onMlTextChange,
+                            onStepMl = viewModel::stepMl,
+                            onOpenBottlePicker = viewModel::openBottlePicker,
+                            onDismissBottlePicker = viewModel::dismissBottlePicker,
+                            onBottlePicked = viewModel::onBottlePicked,
+                            onSave = {
+                                viewModel.save { id ->
+                                    if (state.isNew) {
+                                        // Land on the new drink, with the editor gone from the back stack.
+                                        navController.navigate(Routes.detail(id)) {
+                                            popUpTo(Routes.CUSTOM_EDIT) { inclusive = true }
+                                        }
+                                    } else {
+                                        navController.popBackStack()
+                                    }
+                                }
+                            },
+                            onDeleteRequest = viewModel::requestDelete,
+                            onDeleteConfirm = {
+                                viewModel.confirmDelete {
+                                    // The detail screen it was opened from shows a drink that is gone.
+                                    if (!navController.popBackStack(Routes.DETAIL, inclusive = true)) {
+                                        navController.popBackStack()
+                                    }
+                                }
+                            },
+                            onDeleteDismiss = viewModel::dismissDelete,
+                        ),
                         contentPadding = innerPadding,
                     )
                 }

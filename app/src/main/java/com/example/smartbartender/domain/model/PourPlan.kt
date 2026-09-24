@@ -22,6 +22,9 @@ data class PourPlan(
 /** Never send a single pour larger than this, whatever the recipe or the parser says. */
 const val MAX_ITEM_ML = 150.0
 
+/** The glass size to plan for until the machine reports its real one. */
+const val DEFAULT_MAX_POUR_ML = 250.0
+
 /** What to pour when the recipe gives no usable measure. Rough, but drinkable. */
 private val DEFAULT_ML_BY_CATEGORY = mapOf(
     BottleCategory.SPIRIT to 40.0,

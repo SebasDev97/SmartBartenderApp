@@ -13,6 +13,8 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.CustomDrink
+import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.Favourites
 import com.example.smartbartender.domain.model.MachineAddress
 import com.example.smartbartender.domain.model.PourHistory
@@ -34,8 +36,8 @@ private val Context.historyStore: DataStore<Preferences> by preferencesDataStore
 
 /**
  * State that must survive an app restart: the rack, the LED show switch, where the machine
- * lives on the network, which pour is in flight, the user's favourite cocktails, and the
- * pours this phone has made.
+ * lives on the network, which pour is in flight, the user's favourite cocktails, the drinks
+ * they made up, and the pours this phone has made.
  *
  * An interface so the pour logic can be driven in a JVM test without a `Context` or a real
  * DataStore. [DataStoreBartenderPreferences] is the only implementation that ships.
@@ -69,6 +71,9 @@ interface BartenderPreferences {
     /** Every pour this phone started that has ended, oldest first. Feeds the Stats tab. */
     val pourHistory: Flow<List<PourRecord>>
 
+    /** Drinks the user made up, most recently created first. */
+    val customDrinks: Flow<List<CustomDrink>>
+
     suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean
 
     suspend fun setLoadedBottles(bottleIds: Set<String>)
@@ -87,6 +92,12 @@ interface BartenderPreferences {
     suspend fun recordPour(record: PourRecord)
 
     suspend fun clearPourHistory()
+
+    /** Adds [drink], or replaces the one with the same id. */
+    suspend fun saveCustomDrink(drink: CustomDrink)
+
+    /** Deletes the drink and un-stars it, so it never lingers in Favourites. */
+    suspend fun deleteCustomDrink(id: String)
 }
 
 class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
@@ -104,6 +115,7 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
         val ACTIVE_JOB_ID = stringPreferencesKey("active_job_id")
         val FAVOURITES = stringPreferencesKey("favourite_cocktails")
         val POUR_HISTORY = stringPreferencesKey("pour_history")
+        val CUSTOM_DRINKS = stringPreferencesKey("custom_drinks")
     }
 
     private val preferences: Flow<Preferences> = dataStore.data.orEmptyOnIoError()
@@ -144,6 +156,10 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
     override val pourHistory: Flow<List<PourRecord>> = historyStore.data.orEmptyOnIoError()
         .map { prefs -> PourHistory.parse(prefs[Keys.POUR_HISTORY].orEmpty()) }
         .distinctUntilChanged()
+
+    override val customDrinks: Flow<List<CustomDrink>> = preferences.map { prefs ->
+        CustomDrinks.parse(prefs[Keys.CUSTOM_DRINKS].orEmpty())
+    }.distinctUntilChanged()
 
     override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean {
         var changed = false
@@ -225,6 +241,23 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
 
     override suspend fun clearPourHistory() {
         historyStore.edit { prefs -> prefs.remove(Keys.POUR_HISTORY) }
+    }
+
+    override suspend fun saveCustomDrink(drink: CustomDrink) {
+        dataStore.edit { prefs ->
+            val current = CustomDrinks.parse(prefs[Keys.CUSTOM_DRINKS].orEmpty())
+            prefs[Keys.CUSTOM_DRINKS] = CustomDrinks.encode(CustomDrinks.upsert(current, drink))
+        }
+    }
+
+    /** One [edit], so the drink and its favourite disappear together. */
+    override suspend fun deleteCustomDrink(id: String) {
+        dataStore.edit { prefs ->
+            val current = CustomDrinks.parse(prefs[Keys.CUSTOM_DRINKS].orEmpty())
+            prefs[Keys.CUSTOM_DRINKS] = CustomDrinks.encode(CustomDrinks.remove(current, id))
+            val favourites = Favourites.parse(prefs[Keys.FAVOURITES].orEmpty())
+            prefs[Keys.FAVOURITES] = Favourites.encode(favourites.filterNot { it.id == id })
+        }
     }
 }
 

@@ -6,7 +6,10 @@ import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.CustomDrink
+import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.Favourites
+import com.example.smartbartender.domain.model.toCocktail
 import com.example.smartbartender.ui.screens.available.runCatchingCancellable
 import com.example.smartbartender.ui.screens.available.userMessage
 import kotlinx.coroutines.Job
@@ -17,25 +20,45 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
+/** Which slice of drinks the Library shows. */
+enum class LibraryFilter { ALL, FAVOURITES, MINE }
+
 data class LibraryUiState(
     val query: String = "",
     val isLoading: Boolean = true,
     val results: List<CocktailSummary> = emptyList(),
     val errorMessage: String? = null,
     val favourites: List<CocktailSummary> = emptyList(),
-    val showFavourites: Boolean = false,
+    val customDrinks: List<CustomDrink> = emptyList(),
+    val filter: LibraryFilter = LibraryFilter.ALL,
 ) {
     val isSearching: Boolean get() = query.isNotBlank()
 
     val favouriteIds: Set<String> = favourites.mapTo(HashSet()) { it.id }
 
-    /** Favourites are searched locally, so that view never waits on the network. */
-    val visibleFavourites: List<CocktailSummary> = Favourites.filter(favourites, query)
+    /** The user's own drinks, as cards. */
+    val myDrinks: List<CocktailSummary> = customDrinks.map { it.toCocktail().summary }
+
+    /**
+     * Favourites as stored, except that a custom drink is drawn from its live copy — so a
+     * rename or a new colour shows up here too, and a deleted one never does.
+     */
+    private val resolvedFavourites: List<CocktailSummary> = run {
+        val mine = myDrinks.associateBy { it.id }
+        favourites.mapNotNull { if (CustomDrinks.isCustomId(it.id)) mine[it.id] else it }
+    }
+
+    /** Favourites and custom drinks are searched locally, so those views never wait on the network. */
+    val visibleFavourites: List<CocktailSummary> = Favourites.filter(resolvedFavourites, query)
+
+    val visibleMyDrinks: List<CocktailSummary> = Favourites.filter(myDrinks, query)
+
+    val favouriteCount: Int get() = resolvedFavourites.size
 }
 
 /**
- * Browsing plus debounced name search against `search.php?s=`, and the user's favourites,
- * which are filtered from storage rather than fetched.
+ * Browsing plus debounced name search against `search.php?s=`, and the user's favourites and
+ * own drinks, which are filtered from storage rather than fetched.
  */
 class LibraryViewModel(
     private val repository: CocktailRepository,
@@ -54,9 +77,14 @@ class LibraryViewModel(
                 _uiState.update { it.copy(favourites = favourites) }
             }
         }
+        viewModelScope.launch {
+            preferences.customDrinks.collect { drinks ->
+                _uiState.update { it.copy(customDrinks = drinks) }
+            }
+        }
     }
 
-    fun setShowFavourites(show: Boolean) = _uiState.update { it.copy(showFavourites = show) }
+    fun setFilter(filter: LibraryFilter) = _uiState.update { it.copy(filter = filter) }
 
     fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) {
         viewModelScope.launch { preferences.setFavourite(cocktail, favourite) }

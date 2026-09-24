@@ -11,6 +11,8 @@ data class CocktailSummary(
     val id: String,
     val name: String,
     val thumbUrl: String?,
+    /** Set only on custom drinks, which have no photo. */
+    val look: DrinkLook? = null,
 )
 
 /** Full recipe as returned by lookup.php / search.php. */
@@ -23,6 +25,8 @@ data class Cocktail(
     val glass: String?,
     val instructions: String?,
     val ingredients: List<RecipeIngredient>,
+    /** Set only on custom drinks, which have no photo. */
+    val look: DrinkLook? = null,
 ) {
-    val summary: CocktailSummary get() = CocktailSummary(id, name, thumbUrl)
+    val summary: CocktailSummary get() = CocktailSummary(id, name, thumbUrl, look)
 }

@@ -13,13 +13,17 @@ import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.appContainer
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.domain.model.CustomDrinks
+import com.example.smartbartender.domain.model.DEFAULT_MAX_POUR_ML
 import com.example.smartbartender.domain.model.PourPlan
 import com.example.smartbartender.domain.model.buildPourPlan
+import com.example.smartbartender.domain.model.toCocktail
 import com.example.smartbartender.ui.screens.available.userMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -66,6 +70,8 @@ data class DetailUiState(
     /** Ingredients no pump can serve, or that needed a guess. Shown before pouring. */
     val pourNotes: List<String> = emptyList(),
     val errorMessage: String? = null,
+    /** A drink the user made, which can be edited. */
+    val isCustom: Boolean = false,
 )
 
 /**
@@ -83,10 +89,11 @@ class DetailViewModel(
     private val machine: BartenderMachine,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(DetailUiState())
+    private val _uiState = MutableStateFlow(DetailUiState(isCustom = CustomDrinks.isCustomId(cocktailId)))
     val uiState = _uiState.asStateFlow()
 
     private var followJob: Job? = null
+    private var loadJob: Job? = null
 
     init {
         loadCocktail()
@@ -97,7 +104,12 @@ class DetailViewModel(
     fun retry() = loadCocktail()
 
     private fun loadCocktail() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        if (_uiState.value.isCustom) {
+            loadJob = observeCustomDrink()
+            return
+        }
+        loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             runCatching { repository.cocktailById(cocktailId) }
                 .onSuccess { cocktail ->
@@ -109,6 +121,31 @@ class DetailViewModel(
                     _uiState.update { it.copy(isLoading = false, errorMessage = throwable.userMessage()) }
                 }
         }
+    }
+
+    /**
+     * A custom drink lives on the phone, not on TheCocktailDB. It is followed rather than read
+     * once, so coming back from the editor shows the change straight away.
+     */
+    private fun observeCustomDrink(): Job = viewModelScope.launch {
+        var reattached = false
+        preferences.customDrinks
+            .map { drinks -> drinks.firstOrNull { it.id == cocktailId } }
+            .distinctUntilChanged()
+            .collect { drink ->
+                if (drink == null) {
+                    _uiState.update {
+                        it.copy(isLoading = false, cocktail = null, errorMessage = "This drink was deleted.")
+                    }
+                    return@collect
+                }
+                _uiState.update { it.copy(isLoading = false, cocktail = drink.toCocktail(), errorMessage = null) }
+                refreshPourNotes()
+                if (!reattached) {
+                    reattached = true
+                    reattach()
+                }
+            }
     }
 
     private fun observeMachine() {
@@ -251,9 +288,6 @@ class DetailViewModel(
     }
 
     companion object {
-        /** Used only until the machine tells us the real glass size. */
-        private const val DEFAULT_MAX_POUR_ML = 250.0
-
         /** [SavedStateHandle] carries the `cocktailId` navigation argument. */
         fun factory(): ViewModelProvider.Factory = viewModelFactory {
             initializer {

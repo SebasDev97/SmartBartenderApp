@@ -7,11 +7,13 @@ import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.Bottle
 import com.example.smartbartender.domain.model.BottleCatalog
+import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.MakeableCocktail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -21,10 +23,19 @@ data class AvailableUiState(
     /** False until DataStore has reported the rack, so we never flash "no bottles". */
     val inventoryKnown: Boolean = false,
     val loadedBottles: List<Bottle> = emptyList(),
-    val canMakeNow: List<MakeableCocktail> = emptyList(),
-    val almost: List<MakeableCocktail> = emptyList(),
+    /** Recipes from TheCocktailDB, as scored by the repository. */
+    val recipes: List<MakeableCocktail> = emptyList(),
+    /** The user's own drinks, scored on the phone. Kept apart so an edit never refetches. */
+    val customDrinks: List<MakeableCocktail> = emptyList(),
     val errorMessage: String? = null,
 ) {
+    /** The user's own drinks lead each section; they are the ones they came back for. */
+    val canMakeNow: List<MakeableCocktail> =
+        customDrinks.filter { it.canMakeNow }.sortedBy { it.cocktail.name } + recipes.filter { it.canMakeNow }
+
+    val almost: List<MakeableCocktail> =
+        customDrinks.filterNot { it.canMakeNow }.sortedBy { it.cocktail.name } + recipes.filterNot { it.canMakeNow }
+
     val hasBottles: Boolean get() = loadedBottles.isNotEmpty()
     val isEmptyResult: Boolean get() = canMakeNow.isEmpty() && almost.isEmpty()
 }
@@ -51,6 +62,11 @@ class AvailableViewModel(
                 load(bottles)
             }
         }
+        viewModelScope.launch {
+            combine(preferences.customDrinks, preferences.loadedBottleIds) { drinks, ids ->
+                CustomDrinks.evaluate(drinks, ids)
+            }.collect { scored -> _uiState.update { it.copy(customDrinks = scored) } }
+        }
     }
 
     fun retry() = load(_uiState.value.loadedBottles)
@@ -59,7 +75,7 @@ class AvailableViewModel(
         loadJob?.cancel()
         if (bottles.isEmpty()) {
             _uiState.update {
-                it.copy(isLoading = false, canMakeNow = emptyList(), almost = emptyList(), errorMessage = null)
+                it.copy(isLoading = false, recipes = emptyList(), errorMessage = null)
             }
             return
         }
@@ -70,8 +86,7 @@ class AvailableViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            canMakeNow = result.canMakeNow,
-                            almost = result.almost,
+                            recipes = result.canMakeNow + result.almost,
                             errorMessage = null,
                         )
                     }

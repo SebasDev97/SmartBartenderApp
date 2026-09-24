@@ -23,9 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +61,7 @@ fun DetailScreen(
     led: LedState,
     onStartPreparation: () -> Unit,
     onToggleFavourite: () -> Unit,
+    onEdit: () -> Unit,
     onCancelPreparation: () -> Unit,
     onFinishAcknowledged: () -> Unit,
     onRetry: () -> Unit,
@@ -78,6 +81,7 @@ fun DetailScreen(
                 isFavourite = state.isFavourite,
                 onStartPreparation = onStartPreparation,
                 onToggleFavourite = onToggleFavourite,
+                onEdit = if (state.isCustom) onEdit else null,
                 contentPadding = contentPadding,
             )
         }
@@ -108,6 +112,7 @@ private fun RecipeContent(
     isFavourite: Boolean,
     onStartPreparation: () -> Unit,
     onToggleFavourite: () -> Unit,
+    onEdit: (() -> Unit)?,
     contentPadding: PaddingValues,
 ) {
     val accent = if (led.enabled) led.primary else NeonCyan
@@ -125,6 +130,7 @@ private fun RecipeContent(
             CocktailImage(
                 url = cocktail.thumbUrl,
                 contentDescription = cocktail.name,
+                look = cocktail.look,
                 modifier = Modifier.fillMaxSize(),
             )
             // Fade the photo into the page so the layout reads as one panel.
@@ -148,6 +154,11 @@ private fun RecipeContent(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
+                if (onEdit != null) {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "Edit drink", tint = TextSecondary)
+                    }
+                }
                 FavouriteButton(isFavourite = isFavourite, onToggle = onToggleFavourite, heartSize = 26.dp)
             }
             Spacer(Modifier.height(12.dp))

@@ -17,7 +17,12 @@ object Routes {
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{cocktailId}"
 
+    /** Create a custom drink, or edit one when `drinkId` is given. */
+    const val CUSTOM_EDIT = "custom/edit?drinkId={drinkId}"
+
     fun detail(cocktailId: String) = "detail/$cocktailId"
+
+    fun customEdit(drinkId: String? = null) = if (drinkId == null) "custom/edit" else "custom/edit?drinkId=$drinkId"
 }
 
 /** The bottom-bar destinations, in display order. */

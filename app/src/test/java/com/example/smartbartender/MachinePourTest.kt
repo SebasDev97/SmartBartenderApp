@@ -3,6 +3,7 @@ package com.example.smartbartender
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
@@ -98,6 +99,7 @@ class MachinePourTest {
         override val activeJobId = MutableStateFlow<String?>(null)
         override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
         override val pourHistory = MutableStateFlow<List<PourRecord>>(emptyList())
+        override val customDrinks = MutableStateFlow<List<CustomDrink>>(emptyList())
 
         override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
         override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
@@ -108,6 +110,8 @@ class MachinePourTest {
         override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) = Unit
         override suspend fun recordPour(record: PourRecord) = Unit
         override suspend fun clearPourHistory() = Unit
+        override suspend fun saveCustomDrink(drink: CustomDrink) = Unit
+        override suspend fun deleteCustomDrink(id: String) = Unit
     }
 
     // ------------------------------------------------------------------ tests

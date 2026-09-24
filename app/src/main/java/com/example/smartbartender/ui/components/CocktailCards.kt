@@ -3,6 +3,7 @@ package com.example.smartbartender.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,26 +28,36 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.DrinkLook
 import com.example.smartbartender.domain.model.MakeableCocktail
 import com.example.smartbartender.ui.theme.NeonAmber
 import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextSecondary
 
-/** Cocktail photo with placeholder when the API has no thumbnail. */
+/**
+ * Cocktail photo with placeholder when the API has no thumbnail. A custom drink has no photo,
+ * so its [look] — an emoji on its chosen colour — stands in for one.
+ */
 @Composable
 fun CocktailImage(
     url: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
+    look: DrinkLook? = null,
 ) {
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
-        if (url.isNullOrBlank()) {
+        if (look != null) {
+            DrinkLookImage(look = look, contentDescription = contentDescription, modifier = Modifier.fillMaxSize())
+        } else if (url.isNullOrBlank()) {
             Icon(
                 imageVector = Icons.Outlined.LocalBar,
                 contentDescription = contentDescription,
@@ -63,6 +74,27 @@ fun CocktailImage(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+}
+
+@Composable
+private fun DrinkLookImage(look: DrinkLook, contentDescription: String?, modifier: Modifier = Modifier) {
+    val colour = Color(look.colorArgb)
+    BoxWithConstraints(
+        modifier = modifier
+            .background(
+                Brush.radialGradient(
+                    0f to colour.copy(alpha = 0.55f),
+                    1f to Obsidian,
+                ),
+            )
+            .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Scale the emoji with the tile: a 76 dp row thumbnail and a full-width hero both
+        // read as one glyph filling about half the frame.
+        val glyphSize = with(LocalDensity.current) { (minOf(maxWidth, maxHeight) * 0.45f).toSp() }
+        Text(text = look.emoji.ifBlank { "🍹" }, fontSize = glyphSize)
     }
 }
 
@@ -92,6 +124,7 @@ fun CocktailGridCard(
                 CocktailImage(
                     url = cocktail.thumbUrl,
                     contentDescription = cocktail.name,
+                    look = cocktail.look,
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Bottom scrim keeps the title legible over bright drink photos.
@@ -156,6 +189,7 @@ fun MakeableCocktailRow(
             CocktailImage(
                 url = cocktail.thumbUrl,
                 contentDescription = cocktail.name,
+                look = cocktail.look,
                 modifier = Modifier
                     .size(76.dp)
                     .clip(RoundedCornerShape(14.dp)),
