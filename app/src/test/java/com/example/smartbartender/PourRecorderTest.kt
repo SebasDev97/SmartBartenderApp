@@ -19,6 +19,7 @@ import com.example.smartbartender.domain.model.PourOutcome
 import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourRequest
 import com.example.smartbartender.domain.model.StepKind
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -58,7 +59,7 @@ class PourRecorderTest {
 
     private class FakePreferences : BartenderPreferences {
         override val loadedBottleIds = MutableStateFlow(setOf("tequila", "triple_sec"))
-        override val slots = MutableStateFlow<List<String?>>(listOf("tequila", "triple_sec", null, null))
+        override val slots = MutableStateFlow(listOf("tequila", "triple_sec", null, null))
         override val ledShowEnabled = MutableStateFlow(true)
         override val machineAddress = MutableStateFlow(MachineAddress("10.0.2.2", 8080, enabled = true))
         override val activeJobId = MutableStateFlow<String?>(null)
@@ -84,11 +85,13 @@ class PourRecorderTest {
         override suspend fun deleteCustomDrink(id: String) = Unit
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun TestScope.recorder(machine: FakeMachine, preferences: FakePreferences) {
         PourRecorder(machine, preferences, backgroundScope, clock = { 1_000L })
         runCurrent()
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `this phone's finished pour is recorded with its bottles`() = runTest {
         val machine = FakeMachine()
@@ -108,6 +111,7 @@ class PourRecorderTest {
         assertEquals(mapOf("tequila" to 44.0, "triple_sec" to 15.0), record.mlByBottle)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `another phone's pour is not this phone's statistic`() = runTest {
         val machine = FakeMachine()
@@ -121,6 +125,7 @@ class PourRecorderTest {
         assertTrue(preferences.pourHistory.value.isEmpty())
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `a repeated final frame is counted once`() = runTest {
         val machine = FakeMachine()
@@ -136,6 +141,7 @@ class PourRecorderTest {
         assertEquals(1, preferences.pourHistory.value.size)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `a stopped pour is recorded as stopped`() = runTest {
         val machine = FakeMachine()
@@ -151,6 +157,7 @@ class PourRecorderTest {
         assertEquals(mapOf("tequila" to 44.0), record.mlByBottle)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `a pour that ended while the app was dead is caught up on reconnect`() = runTest {
         val machine = FakeMachine(connected = false)
@@ -167,6 +174,7 @@ class PourRecorderTest {
         assertEquals(777L, record.finishedAtMs)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `an already recorded pour is not fetched again`() = runTest {
         val machine = FakeMachine(connected = false)
