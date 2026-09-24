@@ -2,6 +2,7 @@ package com.example.smartbartender
 
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
@@ -90,6 +91,7 @@ class MachinePourTest {
         override val ledShowEnabled = MutableStateFlow(true)
         override val machineAddress = MutableStateFlow(MachineAddress("10.0.2.2", 8080, enabled = true))
         override val activeJobId = MutableStateFlow<String?>(null)
+        override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
 
         override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
         override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
@@ -97,6 +99,7 @@ class MachinePourTest {
         override suspend fun setLedShowEnabled(enabled: Boolean) = Unit
         override suspend fun setMachineAddress(host: String, port: Int, enabled: Boolean) = Unit
         override suspend fun setActiveJobId(jobId: String?) { activeJobId.value = jobId }
+        override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) = Unit
     }
 
     // ------------------------------------------------------------------ tests

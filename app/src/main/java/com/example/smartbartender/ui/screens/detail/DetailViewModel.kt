@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -60,6 +61,7 @@ data class DetailUiState(
     val isLoading: Boolean = true,
     val cocktail: Cocktail? = null,
     val machineOnline: Boolean = false,
+    val isFavourite: Boolean = false,
     val preparation: PreparationState = PreparationState(),
     /** Ingredients no pump can serve, or that needed a guess. Shown before pouring. */
     val pourNotes: List<String> = emptyList(),
@@ -89,6 +91,7 @@ class DetailViewModel(
     init {
         loadCocktail()
         observeMachine()
+        observeFavourite()
     }
 
     fun retry() = loadCocktail()
@@ -116,6 +119,20 @@ class DetailViewModel(
                     refreshPourNotes()
                 }
         }
+    }
+
+    private fun observeFavourite() {
+        viewModelScope.launch {
+            preferences.favourites
+                .map { favourites -> favourites.any { it.id == cocktailId } }
+                .collect { favourite -> _uiState.update { it.copy(isFavourite = favourite) } }
+        }
+    }
+
+    fun toggleFavourite() {
+        val state = _uiState.value
+        val cocktail = state.cocktail ?: return
+        viewModelScope.launch { preferences.setFavourite(cocktail.summary, !state.isFavourite) }
     }
 
     /**

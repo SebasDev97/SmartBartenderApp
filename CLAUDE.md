@@ -148,8 +148,8 @@ JVM unit tests only, under `app/src/test/`, JUnit 4 + `kotlinx-coroutines-test`,
 hand-written fakes — there is no mocking library, and `AvailabilityTest`'s `FakeApi` is the
 pattern to copy. They cover ingredient normalisation and alias resolution, the 15-slot
 ingredient/measure pairing, both miss-response shapes, the four-slot clamp,
-can-make/almost/not-shown classification, measure parsing, pour planning, slot ordering, the
-pour reducer, and the machine contract through a `FakeMachine`/`FakePreferences` pair.
+can-make/almost/not-shown classification, measure parsing, pour planning, slot ordering,
+favourites storage and search, the pour reducer, and the machine contract through a `FakeMachine`/`FakePreferences` pair.
 `BartenderPreferences` is an interface for that last reason; `DataStoreBartenderPreferences` is
 the only implementation that ships.
 

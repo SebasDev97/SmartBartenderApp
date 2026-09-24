@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LocalBar
@@ -65,13 +66,15 @@ fun CocktailImage(
     }
 }
 
-/** Grid tile used by the Library screen. */
+/** Grid tile used by the Library screen. The heart only shows when [onToggleFavourite] is set. */
 @Composable
 fun CocktailGridCard(
     cocktail: CocktailSummary,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = NeonCyan,
+    isFavourite: Boolean = false,
+    onToggleFavourite: (() -> Unit)? = null,
 ) {
     GlassPanel(
         modifier = modifier,
@@ -102,6 +105,20 @@ fun CocktailGridCard(
                             ),
                         ),
                 )
+                if (onToggleFavourite != null) {
+                    FavouriteButton(
+                        isFavourite = isFavourite,
+                        onToggle = onToggleFavourite,
+                        heartSize = 20.dp,
+                        idleTint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Obsidian.copy(alpha = 0.55f)),
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
             Text(

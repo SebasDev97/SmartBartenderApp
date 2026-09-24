@@ -41,6 +41,7 @@ import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.RecipeIngredient
 import com.example.smartbartender.ui.components.CocktailImage
 import com.example.smartbartender.ui.components.ErrorState
+import com.example.smartbartender.ui.components.FavouriteButton
 import com.example.smartbartender.ui.components.GlassPanel
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.MetaChip
@@ -57,6 +58,7 @@ fun DetailScreen(
     state: DetailUiState,
     led: LedState,
     onStartPreparation: () -> Unit,
+    onToggleFavourite: () -> Unit,
     onCancelPreparation: () -> Unit,
     onFinishAcknowledged: () -> Unit,
     onRetry: () -> Unit,
@@ -73,7 +75,9 @@ fun DetailScreen(
                 preparationRunning = !state.preparation.isIdle,
                 machineOnline = state.machineOnline,
                 pourNotes = state.pourNotes,
+                isFavourite = state.isFavourite,
                 onStartPreparation = onStartPreparation,
+                onToggleFavourite = onToggleFavourite,
                 contentPadding = contentPadding,
             )
         }
@@ -101,7 +105,9 @@ private fun RecipeContent(
     preparationRunning: Boolean,
     machineOnline: Boolean,
     pourNotes: List<String>,
+    isFavourite: Boolean,
     onStartPreparation: () -> Unit,
+    onToggleFavourite: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val accent = if (led.enabled) led.primary else NeonCyan
@@ -135,11 +141,15 @@ private fun RecipeContent(
         }
 
         Column(Modifier.padding(horizontal = 16.dp)) {
-            Text(
-                text = cocktail.name,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = cocktail.name,
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                FavouriteButton(isFavourite = isFavourite, onToggle = onToggleFavourite, heartSize = 26.dp)
+            }
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 cocktail.category?.let { MetaChip(text = it, accent = accent) }

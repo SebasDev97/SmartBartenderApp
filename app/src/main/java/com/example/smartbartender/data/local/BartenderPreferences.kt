@@ -12,6 +12,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.smartbartender.domain.model.BottleCatalog
+import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.domain.model.Favourites
 import com.example.smartbartender.domain.model.MachineAddress
 import com.example.smartbartender.domain.model.SlotRack
 import kotlinx.coroutines.flow.Flow
@@ -23,8 +25,8 @@ import java.io.IOException
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "smart_bartender_settings")
 
 /**
- * Machine state that must survive an app restart: the rack, the LED show switch, where the
- * machine lives on the network, and which pour is in flight.
+ * State that must survive an app restart: the rack, the LED show switch, where the machine
+ * lives on the network, which pour is in flight, and the user's favourite cocktails.
  *
  * An interface so the pour logic can be driven in a JVM test without a `Context` or a real
  * DataStore. [DataStoreBartenderPreferences] is the only implementation that ships.
@@ -52,6 +54,9 @@ interface BartenderPreferences {
     /** The pour this app started and has not yet dismissed, so it can re-attach after a restart. */
     val activeJobId: Flow<String?>
 
+    /** Starred cocktails, most recently added first. */
+    val favourites: Flow<List<CocktailSummary>>
+
     suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean
 
     suspend fun setLoadedBottles(bottleIds: Set<String>)
@@ -63,6 +68,8 @@ interface BartenderPreferences {
     suspend fun setMachineAddress(host: String, port: Int, enabled: Boolean)
 
     suspend fun setActiveJobId(jobId: String?)
+
+    suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean)
 }
 
 class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
@@ -77,6 +84,7 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
         val MACHINE_PORT = intPreferencesKey("machine_port")
         val MACHINE_ENABLED = booleanPreferencesKey("machine_enabled")
         val ACTIVE_JOB_ID = stringPreferencesKey("active_job_id")
+        val FAVOURITES = stringPreferencesKey("favourite_cocktails")
     }
 
     private val preferences: Flow<Preferences> = dataStore.data
@@ -112,6 +120,10 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
 
     override val activeJobId: Flow<String?> = preferences.map { prefs ->
         prefs[Keys.ACTIVE_JOB_ID]?.takeIf { it.isNotBlank() }
+    }.distinctUntilChanged()
+
+    override val favourites: Flow<List<CocktailSummary>> = preferences.map { prefs ->
+        Favourites.parse(prefs[Keys.FAVOURITES].orEmpty())
     }.distinctUntilChanged()
 
     override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean): Boolean {
@@ -176,5 +188,12 @@ class DataStoreBartenderPreferences(context: Context) : BartenderPreferences {
 
     override suspend fun setActiveJobId(jobId: String?) {
         dataStore.edit { prefs -> prefs[Keys.ACTIVE_JOB_ID] = jobId.orEmpty() }
+    }
+
+    override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) {
+        dataStore.edit { prefs ->
+            val current = Favourites.parse(prefs[Keys.FAVOURITES].orEmpty())
+            prefs[Keys.FAVOURITES] = Favourites.encode(Favourites.toggle(current, cocktail, favourite))
+        }
     }
 }
