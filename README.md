@@ -1,4 +1,4 @@
-# Smart Bartender — De-Luxe
+# Smart Bartender
 
 Companion / control app for the **Smart Bartender** cocktail machine, built as an
 Android prototype.
@@ -37,7 +37,7 @@ The debug APK lands in `app/build/outputs/apk/debug/`.
 | **Available** | Everything the machine can pour with the bottles currently loaded, split into *Can make now* and *One bottle away* (with the missing ingredient named). |
 | **Library**   | The full recipe book as a photo grid, with name search (`search.php?s=`) and a *surprise me* random pick (`random.php`).                                |
 | **Bottles**   | The bottle rack. Toggle the bottles that are physically loaded; the selection is persisted.                                                             |
-| **Stats**     | What this phone has poured: cocktails made, litres through each pump, most-made drinks, happy hour, alcohol-free share, and milestones.             |
+| **Stats**     | What this phone has poured: cocktails made, litres through each pump, most-made drinks, happy hour, alcohol-free share, and milestones.                 |
 | **Settings**  | The De-Luxe **LED show** switch, with a live preview of the strip, plus machine status.                                                                 |
 
 Tapping any cocktail opens the **recipe detail**: photo, category, glass, alcoholic/non-alcoholic,
