@@ -2,6 +2,8 @@ package com.example.smartbartender.data.hardware
 
 import com.example.smartbartender.data.hardware.dto.CalibrationRequestDto
 import com.example.smartbartender.data.hardware.dto.CalibrationRunDto
+import com.example.smartbartender.data.hardware.dto.CleaningRequestDto
+import com.example.smartbartender.data.hardware.dto.CleaningRunDto
 import com.example.smartbartender.data.hardware.dto.HealthDto
 import com.example.smartbartender.data.hardware.dto.JogRequestDto
 import com.example.smartbartender.data.hardware.dto.JogResponseDto
@@ -70,4 +72,10 @@ interface BartenderApi {
 
     @POST
     suspend fun abortCalibration(@Url url: String): CalibrationRunDto
+
+    @POST
+    suspend fun startCleaning(@Url url: String, @Body body: CleaningRequestDto): CleaningRunDto
+
+    @POST
+    suspend fun abortCleaning(@Url url: String): CleaningRunDto
 }

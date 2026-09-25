@@ -3,6 +3,7 @@ package com.example.smartbartender
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.domain.model.CalibrationRun
+import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.CustomDrink
@@ -61,6 +62,9 @@ class MachinePourTest {
         override suspend fun startCalibration(pumps: List<Int>?, seconds: Double?): Result<CalibrationRun> =
             error("not used")
         override suspend fun abortCalibration() = Result.success(Unit)
+        override suspend fun startCleaning(pumps: List<Int>?, seconds: Double?, rounds: Int?): Result<CleaningRun> =
+            error("not used")
+        override suspend fun abortCleaning() = Result.success(Unit)
 
         override suspend fun pushSlots(slots: List<String?>): Result<Unit> {
             pushedSlots += slots
@@ -229,7 +233,7 @@ class MachinePourTest {
 
 private fun snapshot() = MachineSnapshot(
     machineId = "bartender-01",
-    name = "Smart Bartender De-Luxe",
+    name = "Smart Bartender",
     firmware = "0.1.0",
     backend = "simulated",
     state = MachineRunState.IDLE,

@@ -16,6 +16,8 @@ from .models import (
     ApiError,
     CalibrationRequest,
     CalibrationRun,
+    CleaningRequest,
+    CleaningRun,
     ErrorCode,
     ErrorResponse,
     Health,
@@ -148,6 +150,25 @@ def create_app(config: Config, machine: Machine, bus: EventBus) -> FastAPI:
     @api.post("/calibration/abort", response_model=CalibrationRun)
     async def abort_calibration(response: Response) -> CalibrationRun:
         run = await machine.abort_calibration()
+        response.status_code = 200 if run.status.terminal else 202
+        return run
+
+    @api.post("/cleaning", response_model=CleaningRun, status_code=202)
+    async def start_cleaning(
+        body: CleaningRequest = Body(default=CleaningRequest()),
+    ) -> CleaningRun:
+        return await machine.start_cleaning(body.pumps, body.seconds, body.rounds)
+
+    @api.get("/cleaning")
+    async def get_cleaning():
+        run = machine.last_cleaning
+        if run is None:
+            return Response(status_code=204)
+        return JSONResponse(content=run.model_dump(by_alias=True, mode="json"))
+
+    @api.post("/cleaning/abort", response_model=CleaningRun)
+    async def abort_cleaning(response: Response) -> CleaningRun:
+        run = await machine.abort_cleaning()
         response.status_code = 200 if run.status.terminal else 202
         return run
 

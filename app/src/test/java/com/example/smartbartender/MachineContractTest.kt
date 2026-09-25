@@ -1,6 +1,7 @@
 package com.example.smartbartender
 
 import com.example.smartbartender.data.hardware.dto.CalibrationRunDto
+import com.example.smartbartender.data.hardware.dto.CleaningRunDto
 import com.example.smartbartender.data.hardware.dto.EventEnvelopeDto
 import com.example.smartbartender.data.hardware.dto.HealthDto
 import com.example.smartbartender.data.hardware.dto.LedDto
@@ -9,6 +10,8 @@ import com.example.smartbartender.data.hardware.dto.PourJobDto
 import com.example.smartbartender.data.hardware.dto.SensorReadingDto
 import com.example.smartbartender.domain.model.CalibrationPhase
 import com.example.smartbartender.domain.model.CalibrationStatus
+import com.example.smartbartender.domain.model.CleaningPhase
+import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.MachineRunState
 import com.example.smartbartender.domain.model.StepKind
@@ -39,11 +42,11 @@ class MachineContractTest {
 
     private val health = """{"ok":true,"machineId":"bartender-01","firmware":"0.1.0"}"""
 
-    private val status = """{"machineId":"bartender-01","name":"Smart Bartender De-Luxe","firmware":"0.1.0","backend":"simulated","state":"idle","pumpCount":4,"maxPourMl":250.0,"uptimeS":905,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":"lime_juice","mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null}"""
+    private val status = """{"machineId":"bartender-01","name":"Smart Bartender","firmware":"0.1.0","backend":"simulated","state":"idle","pumpCount":4,"maxPourMl":250.0,"uptimeS":905,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":"lime_juice","mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null}"""
 
     private val pourJob = """{"jobId":"2a65e4d9-c882-4a5c-ab06-0360709eb065","drinkId":"11007","drinkName":"Margarita","status":"queued","steps":[{"index":0,"kind":"glass","label":"Positioning glass","detail":"Cocktail glass","pump":null,"ml":null,"dispensedMl":null},{"index":1,"kind":"pour","label":"Pouring Tequila","detail":"44 ml","pump":1,"ml":44.0,"dispensedMl":0.0},{"index":2,"kind":"pour","label":"Pouring Triple sec","detail":"15 ml","pump":2,"ml":15.0,"dispensedMl":0.0},{"index":3,"kind":"mix","label":"Mixing","detail":"Stirring the blend","pump":null,"ml":null,"dispensedMl":null},{"index":4,"kind":"manual","label":"Salt the rim","detail":"Add this yourself","pump":null,"ml":null,"dispensedMl":null},{"index":5,"kind":"finish","label":"Finishing touch","detail":"Garnish and serve","pump":null,"ml":null,"dispensedMl":null}],"currentStepIndex":0,"progress":0.0,"totalMl":59.0,"dispensedMl":0.0,"startedAtMs":null,"finishedAtMs":null,"error":null}"""
 
-    private val snapshotEvent = """{"type":"snapshot","seq":1,"ts":1790097817547,"data":{"machineId":"bartender-01","name":"Smart Bartender De-Luxe","firmware":"0.1.0","backend":"simulated","state":"idle","pumpCount":4,"maxPourMl":250.0,"uptimeS":905,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":"lime_juice","mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null}}"""
+    private val snapshotEvent = """{"type":"snapshot","seq":1,"ts":1790097817547,"data":{"machineId":"bartender-01","name":"Smart Bartender","firmware":"0.1.0","backend":"simulated","state":"idle","pumpCount":4,"maxPourMl":250.0,"uptimeS":905,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":"lime_juice","mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null}}"""
 
     private val pourEvent = """{"type":"pour","seq":2,"ts":1790097817548,"data":{"jobId":"2a65e4d9-c882-4a5c-ab06-0360709eb065","drinkId":"11007","drinkName":"Margarita","status":"running","steps":[{"index":0,"kind":"glass","label":"Positioning glass","detail":"Cocktail glass","pump":null,"ml":null,"dispensedMl":null},{"index":1,"kind":"pour","label":"Pouring Tequila","detail":"44 ml","pump":1,"ml":44.0,"dispensedMl":0.0},{"index":2,"kind":"pour","label":"Pouring Triple sec","detail":"15 ml","pump":2,"ml":15.0,"dispensedMl":0.0},{"index":3,"kind":"mix","label":"Mixing","detail":"Stirring the blend","pump":null,"ml":null,"dispensedMl":null},{"index":4,"kind":"manual","label":"Salt the rim","detail":"Add this yourself","pump":null,"ml":null,"dispensedMl":null},{"index":5,"kind":"finish","label":"Finishing touch","detail":"Garnish and serve","pump":null,"ml":null,"dispensedMl":null}],"currentStepIndex":0,"progress":0.0,"totalMl":59.0,"dispensedMl":0.0,"startedAtMs":1790097817548,"finishedAtMs":null,"error":null}}"""
 
@@ -54,7 +57,15 @@ class MachineContractTest {
 
     private val measuredPourEvent = """{"type":"pour","seq":15,"ts":1790331392436,"data":{"jobId":"5aa275fa-d5e0-42f0-aa74-aa71298405b9","drinkId":null,"drinkName":"Margarita","status":"finished","steps":[{"index":0,"kind":"glass","label":"Glass detected","detail":"Cocktail glass","pump":null,"ml":null,"dispensedMl":null,"measured":false},{"index":1,"kind":"pour","label":"Pouring Tequila","detail":"44 ml","pump":1,"ml":44.0,"dispensedMl":44.12,"measured":true},{"index":2,"kind":"mix","label":"Mixing","detail":"Stirring the blend","pump":null,"ml":null,"dispensedMl":null,"measured":false},{"index":3,"kind":"finish","label":"Finishing touch","detail":"Garnish and serve","pump":null,"ml":null,"dispensedMl":null,"measured":false}],"currentStepIndex":3,"progress":1.0,"totalMl":44.0,"dispensedMl":44.12,"startedAtMs":1790331391239,"finishedAtMs":1790331392435,"error":null,"waitingForGlass":false}}"""
 
-    private val calibratingSnapshotEvent = """{"type":"snapshot","seq":17,"ts":1790331392945,"data":{"machineId":"bartender-01","name":"Smart Bartender De-Luxe","firmware":"0.1.0","backend":"simulated","state":"busy","pumpCount":4,"maxPourMl":250.0,"uptimeS":4,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":null,"mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null,"sensor":{"referenceCm":16.3,"glassDiameterMm":58.0,"calibratedAtMs":null},"calibration":{"runId":"dbf52d12-625f-48e0-baa2-39ac407f32c4","status":"running","phase":"waiting_glass","pumps":[1],"currentPump":null,"message":"","results":[],"startedAtMs":1790331392945,"finishedAtMs":null,"error":null}}}"""
+    private val calibratingSnapshotEvent = """{"type":"snapshot","seq":17,"ts":1790331392945,"data":{"machineId":"bartender-01","name":"Smart Bartender","firmware":"0.1.0","backend":"simulated","state":"busy","pumpCount":4,"maxPourMl":250.0,"uptimeS":4,"slots":[{"pump":1,"bottleId":"tequila","mlPerSecond":12.5},{"pump":2,"bottleId":"triple_sec","mlPerSecond":12.5},{"pump":3,"bottleId":null,"mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null,"sensor":{"referenceCm":16.3,"glassDiameterMm":58.0,"calibratedAtMs":null},"calibration":{"runId":"dbf52d12-625f-48e0-baa2-39ac407f32c4","status":"running","phase":"waiting_glass","pumps":[1],"currentPump":null,"message":"","results":[],"startedAtMs":1790331392945,"finishedAtMs":null,"error":null}}}"""
+
+    // Captured after cleaning was added.
+
+    private val cleaningSnapshotEvent = """{"type":"snapshot","seq":2,"ts":1790332551057,"data":{"machineId":"bartender-01","name":"Smart Bartender","firmware":"0.1.0","backend":"simulated","state":"busy","pumpCount":4,"maxPourMl":250.0,"uptimeS":1,"slots":[{"pump":1,"bottleId":null,"mlPerSecond":12.5},{"pump":2,"bottleId":null,"mlPerSecond":12.5},{"pump":3,"bottleId":null,"mlPerSecond":12.5},{"pump":4,"bottleId":null,"mlPerSecond":12.5}],"led":{"enabled":true,"mode":"spectrum","colorHex":"#2AF5E4","brightness":0.6,"cycleMillis":7000},"currentJob":null,"fault":null,"sensor":{"referenceCm":16.3,"glassDiameterMm":58.0,"calibratedAtMs":null},"calibration":null,"cleaning":{"runId":"3553974e-59a8-4af8-b4af-276274eb74bf","status":"running","phase":"pumping","pumps":[1,2],"rounds":1,"seconds":2.0,"currentRound":null,"currentPump":null,"progress":0.0,"message":"","startedAtMs":1790332551057,"finishedAtMs":null,"error":null}}}"""
+
+    private val cleaningEvent = """{"type":"cleaning","seq":4,"ts":1790332551462,"data":{"runId":"3553974e-59a8-4af8-b4af-276274eb74bf","status":"running","phase":"pumping","pumps":[1,2],"rounds":1,"seconds":2.0,"currentRound":1,"currentPump":1,"progress":0.405,"message":"Rinsing pump 1 (round 1 of 1)","startedAtMs":1790332551057,"finishedAtMs":null,"error":null}}"""
+
+    private val cleaningFinishedEvent = """{"type":"cleaning","seq":8,"ts":1790332552312,"data":{"runId":"3553974e-59a8-4af8-b4af-276274eb74bf","status":"finished","phase":"done","pumps":[1,2],"rounds":1,"seconds":2.0,"currentRound":null,"currentPump":null,"progress":1.0,"message":"Rinsed — put your bottles back","startedAtMs":1790332551057,"finishedAtMs":1790332552312,"error":null}}"""
 
     private val calibrationEvent = """{"type":"calibration","seq":25,"ts":1790331393672,"data":{"runId":"dbf52d12-625f-48e0-baa2-39ac407f32c4","status":"finished","phase":"done","pumps":[1],"currentPump":null,"message":"Calibrated 1 pump","results":[{"pump":1,"mlPerSecond":12.581,"volumeMl":12.68,"seconds":1.008,"startDistanceCm":13.93,"endDistanceCm":13.45}],"startedAtMs":1790331392945,"finishedAtMs":1790331393672,"error":null}}"""
 
@@ -173,6 +184,7 @@ class MachineContractTest {
         val snapshot = json.decodeFromString<MachineStatusDto>(status).toDomain()
         assertNull(snapshot.sensorReferenceCm)
         assertNull(snapshot.calibration)
+        assertNull(snapshot.cleaning)
     }
 
     @Test
@@ -196,6 +208,45 @@ class MachineContractTest {
         assertEquals(CalibrationPhase.DONE, run.phase)
         assertEquals(listOf(1), run.results.map { it.pump })
         assertTrue(run.results.single().mlPerSecond > 0)
+    }
+
+    @Test
+    fun `a snapshot during cleaning carries the running run`() {
+        val envelope = json.decodeFromString<EventEnvelopeDto>(cleaningSnapshotEvent)
+        val snapshot = json.decodeFromJsonElement(MachineStatusDto.serializer(), envelope.payload).toDomain()
+
+        assertEquals(MachineRunState.BUSY, snapshot.state)
+        assertNull(snapshot.calibration)
+        assertEquals(CleaningStatus.RUNNING, snapshot.cleaning?.status)
+        assertEquals(listOf(1, 2), snapshot.cleaning?.pumps)
+    }
+
+    @Test
+    fun `a cleaning event carries the pump, the round and the progress`() {
+        val envelope = json.decodeFromString<EventEnvelopeDto>(cleaningEvent)
+        assertEquals("cleaning", envelope.type)
+
+        val run = json.decodeFromJsonElement(CleaningRunDto.serializer(), envelope.payload).toDomain()
+        assertEquals(CleaningStatus.RUNNING, run.status)
+        assertEquals(CleaningPhase.PUMPING, run.phase)
+        assertEquals(1, run.currentRound)
+        assertEquals(1, run.currentPump)
+        assertEquals(1, run.rounds)
+        assertEquals(2.0, run.seconds, 0.001)
+        assertEquals(0.405f, run.progress, 0.001f)
+    }
+
+    @Test
+    fun `the last cleaning event ends the run`() {
+        val envelope = json.decodeFromString<EventEnvelopeDto>(cleaningFinishedEvent)
+        val run = json.decodeFromJsonElement(CleaningRunDto.serializer(), envelope.payload).toDomain()
+
+        assertEquals(CleaningStatus.FINISHED, run.status)
+        assertEquals(CleaningPhase.DONE, run.phase)
+        assertTrue(run.status.isTerminal)
+        assertNull(run.currentPump)
+        assertEquals(1f, run.progress, 0.0001f)
+        assertNull(run.error)
     }
 
     @Test

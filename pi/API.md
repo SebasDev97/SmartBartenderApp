@@ -39,7 +39,7 @@ The complete state of the machine. Returned by `GET /api/v1/status`, and pushed 
 ```json
 {
   "machineId": "bartender-01",
-  "name": "Smart Bartender De-Luxe",
+  "name": "Smart Bartender",
   "firmware": "0.1.0",
   "backend": "simulated",
   "state": "idle",
@@ -56,7 +56,8 @@ The complete state of the machine. Returned by `GET /api/v1/status`, and pushed 
   "currentJob": null,
   "fault": null,
   "sensor": { "referenceCm": 16.3, "glassDiameterMm": 58.0, "calibratedAtMs": 1758531234567 },
-  "calibration": null
+  "calibration": null,
+  "cleaning": null
 }
 ```
 
@@ -76,6 +77,7 @@ The complete state of the machine. Returned by `GET /api/v1/status`, and pushed 
 | `sensor.glassDiameterMm` | float                    | The straight glass measured volumes assume.                            |
 | `sensor.calibratedAtMs` | int \| null               | When the pumps were last calibrated.                                   |
 | `calibration`         | `CalibrationRun` \| null    | The running calibration, if any. `state` is `busy` meanwhile.          |
+| `cleaning`            | `CleaningRun` \| null       | The running cleaning, if any. `state` is `busy` meanwhile.             |
 
 ### 1.2 `PourJob`
 
@@ -198,7 +200,43 @@ the level, run the pump for `seconds`, settle 2 s, measure again, and divide the
 time the pump actually ran. Each pump's result replaces its `mlPerSecond` immediately and is
 saved on the Pi — also when a later pump fails, so a nearly-full glass loses nothing.
 
-### 1.6 `SensorReading`
+### 1.6 `CleaningRun`
+
+One rinse of the pump lines. Pushed whole as the `cleaning` WebSocket event on every phase
+change and every ~0.5 s while a pump runs, and returned by the cleaning endpoints.
+
+```json
+{
+  "runId": "a41c…",
+  "status": "running",
+  "phase": "pumping",
+  "pumps": [1, 2, 3, 4],
+  "rounds": 2,
+  "seconds": 10.0,
+  "currentRound": 1,
+  "currentPump": 3,
+  "progress": 0.31,
+  "message": "Rinsing pump 3 (round 1 of 2)",
+  "startedAtMs": 1758531234567,
+  "finishedAtMs": null,
+  "error": null
+}
+```
+
+| Field      | Values                                                                        |
+|------------|-------------------------------------------------------------------------------|
+| `status`   | `running` → `finished` \| `failed` \| `aborted`                                |
+| `phase`    | per pump: `pumping`, then `pausing` before the next one; `done` at the end    |
+| `progress` | Pump time done over pump time planned (`rounds × pumps × seconds`), 0–1       |
+| `error`    | A `Fault`: `ABORTED_BY_USER` when stopped, `PUMP_FAULT` on hardware trouble    |
+
+The user swaps each bottle for warm water and puts a large container under the nozzle. Then
+every pump in `pumps` runs for `seconds` in turn, one at a time with a short pause between them,
+and the whole row repeats `rounds` times. **The glass sensor is not used**: the container holds
+more than a glass, and the app asks the user to confirm it is there. Bottle ids are ignored, and
+the slot table, the calibration and the pour history are left untouched.
+
+### 1.7 `SensorReading`
 
 ```json
 { "distanceCm": 15.6, "glassPresent": true, "referenceCm": 16.3 }
@@ -229,6 +267,9 @@ test the glass step uses, on this single reading.
 | `POST` | `/api/v1/calibration`         | Start a calibration run                  |
 | `GET`  | `/api/v1/calibration`         | The running or last run, or `204`        |
 | `POST` | `/api/v1/calibration/abort`   | Stop the calibration                     |
+| `POST` | `/api/v1/cleaning`            | Start rinsing the pump lines             |
+| `GET`  | `/api/v1/cleaning`            | The running or last rinse, or `204`      |
+| `POST` | `/api/v1/cleaning/abort`      | Stop the rinse                           |
 
 ### `GET /healthz`
 
@@ -307,7 +348,7 @@ The Pi keeps the last 20 jobs in memory, so `GET /api/v1/pours/{jobId}` still an
 ends. The app persists the active `jobId`; on a cold start it re-attaches and drops the user back
 into a live overlay at the right percentage.
 
-Errors: `409 MACHINE_BUSY` (a pour or a calibration is running), `422 UNKNOWN_BOTTLE` (no such
+Errors: `409 MACHINE_BUSY` (a pour, a calibration or a cleaning is running), `422 UNKNOWN_BOTTLE` (no such
 bottle id), `422 SLOT_EMPTY` (that bottle isn't loaded), `422 VOLUME_OUT_OF_RANGE` (an item over
 150 ml, or a total over `maxPourMl`), `503 NOT_CONFIGURED` (no slots configured yet),
 `503 NOT_CALIBRATED` (the sensor has no tray reference, so no glass can be detected).
@@ -344,7 +385,7 @@ Response `200`: `{ "pump": 1, "seconds": 2.0 }`, once the pump has stopped. Capp
 
 ### `GET /api/v1/sensor`
 
-One `SensorReading` (§1.6), taken now. Safe during a pour. `500 SENSOR_FAULT` if the Arduino
+One `SensorReading` (§1.7), taken now. Safe during a pour. `500 SENSOR_FAULT` if the Arduino
 does not answer.
 
 ### `POST /api/v1/sensor/reference`
@@ -378,6 +419,29 @@ repeated pump or `seconds` outside 0–30.
 Empty body. `202` with the run while it stops (the pump goes off at once), `200` if it had
 already ended, `404` if none ever ran.
 
+### `POST /api/v1/cleaning`
+
+```json
+{ "pumps": [1, 2, 3, 4], "seconds": 10.0, "rounds": 2 }
+```
+
+All fields optional: every pump, and `cleaning.pump_seconds` / `cleaning.rounds` from
+`config.yaml`. Needs no loaded slots and no tray reference.
+
+Response `202` with the `CleaningRun` (§1.6). Progress arrives as `cleaning` events.
+Errors: `409 MACHINE_BUSY`, and `422` for an unknown or repeated pump, `seconds` outside 0–30,
+or `rounds` outside 1–5. While it runs, every other command that drives a pump or changes the
+slots (`pours`, `calibration`, `jog`, `PUT /slots`, `sensor/reference`) gets `409 MACHINE_BUSY`.
+
+### `GET /api/v1/cleaning`
+
+`200` with the running rinse, or the last one after it ended; `204` if none ran since boot.
+
+### `POST /api/v1/cleaning/abort`
+
+Empty body. `202` with the run while it stops (the pump goes off at once), `200` if it had
+already ended, `404` if none ever ran.
+
 ### Error shape
 
 Every `4xx`/`5xx` uses the same body:
@@ -388,7 +452,7 @@ Every `4xx`/`5xx` uses the same body:
 
 | Code                  | HTTP | Meaning                                         |
 |-----------------------|------|-------------------------------------------------|
-| `MACHINE_BUSY`        | 409  | A job is running; `currentJob` is included      |
+| `MACHINE_BUSY`        | 409  | A pour, calibration or cleaning is running; `currentJob` is included for a pour |
 | `NOT_CONFIGURED`      | 503  | No slots configured                             |
 | `UNKNOWN_BOTTLE`      | 422  | Bottle id not recognised                        |
 | `SLOT_EMPTY`          | 422  | That bottle is not loaded in any pump           |
@@ -422,6 +486,7 @@ replay — a reconnect sends a fresh `snapshot`, which *is* the recovery mechani
 | `led`       | `LedState`            | LED changed from anywhere, including the Pi's own `pour` mode switch                                                                   |
 | `slots`     | `{ "slots": [...] }`  | Slot mapping or a pump's calibrated `mlPerSecond` changed                                                                             |
 | `calibration` | `CalibrationRun`    | A calibration run starts, changes phase, gets a result, and ends                                                                       |
+| `cleaning`  | `CleaningRun`         | A cleaning run starts, changes pump or phase, every ~0.5 s while a pump runs, and ends                                                 |
 | `fault`     | `Fault`               | Hardware trouble. Also flips `state` to `fault`                                                                                        |
 | `heartbeat` | `{ "uptimeS": 1843 }` | Every 5 seconds                                                                                                                        |
 
@@ -492,4 +557,8 @@ curl -s $PI/api/v1/calibration | python3 -m json.tool
 
 # ...or only pump 1, for 3 s
 curl -s -X POST $PI/api/v1/calibration -H 'Content-Type: application/json' -d '{"pumps":[1],"seconds":3}'
+
+# Rinse every pump with warm water: 10 s each, twice round (a large container under the nozzle!)
+curl -s -X POST $PI/api/v1/cleaning -H 'Content-Type: application/json' -d '{"seconds":10,"rounds":2}' | python3 -m json.tool
+curl -s -X POST $PI/api/v1/cleaning/abort | python3 -m json.tool
 ```

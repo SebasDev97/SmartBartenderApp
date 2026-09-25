@@ -57,3 +57,10 @@ calibration:
   path: ~/pump_calibration.json
   pump_seconds: 3.0              # each pump runs this long during calibration
   settle_seconds: 2.0
+
+# The rinse from the app's Settings -> Clean pumps: swap each bottle for warm water, put a large
+# container under the nozzle, and every pump runs in turn. The app can override all but the pause.
+cleaning:
+  pump_seconds: 3.0             # per pump, per round (at most 30)
+  rounds: 2                      # 1 -> 2 -> 3 -> 4, this many times (at most 5)
+  pause_seconds: 1.0             # between pumps

@@ -2,6 +2,7 @@ package com.example.smartbartender.data.hardware
 
 import android.util.Log
 import com.example.smartbartender.data.hardware.dto.CalibrationRunDto
+import com.example.smartbartender.data.hardware.dto.CleaningRunDto
 import com.example.smartbartender.data.hardware.dto.EventEnvelopeDto
 import com.example.smartbartender.data.hardware.dto.FaultDto
 import com.example.smartbartender.data.hardware.dto.LedDto
@@ -9,6 +10,7 @@ import com.example.smartbartender.data.hardware.dto.MachineStatusDto
 import com.example.smartbartender.data.hardware.dto.PourJobDto
 import com.example.smartbartender.data.hardware.dto.SlotsResponseDto
 import com.example.smartbartender.domain.model.CalibrationRun
+import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.LedShow
 import com.example.smartbartender.domain.model.MachineFault
 import com.example.smartbartender.domain.model.MachineSlot
@@ -34,6 +36,7 @@ sealed interface MachineEvent {
     data class Slots(val slots: List<MachineSlot>) : MachineEvent
     data class Fault(val fault: MachineFault) : MachineEvent
     data class Calibration(val run: CalibrationRun) : MachineEvent
+    data class Cleaning(val run: CleaningRun) : MachineEvent
     data object Heartbeat : MachineEvent
 }
 
@@ -90,6 +93,9 @@ private fun parseEvent(text: String, json: Json): MachineEvent? = runCatching {
 
         "calibration" ->
             MachineEvent.Calibration(json.decodeFromJsonElement(CalibrationRunDto.serializer(), envelope.payload).toDomain())
+
+        "cleaning" ->
+            MachineEvent.Cleaning(json.decodeFromJsonElement(CleaningRunDto.serializer(), envelope.payload).toDomain())
 
         "heartbeat" -> MachineEvent.Heartbeat
 

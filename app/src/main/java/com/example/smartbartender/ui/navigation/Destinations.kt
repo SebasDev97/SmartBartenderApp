@@ -20,6 +20,9 @@ object Routes {
     /** Tray reference, pump priming and calibration, pushed from Settings. */
     const val CALIBRATION = "calibration"
 
+    /** Rinse the pump lines with warm water, pushed from Settings. */
+    const val CLEANING = "cleaning"
+
     /** Create a custom drink, or edit one when `drinkId` is given. */
     const val CUSTOM_EDIT = "custom/edit?drinkId={drinkId}"
 

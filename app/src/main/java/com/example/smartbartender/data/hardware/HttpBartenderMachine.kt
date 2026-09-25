@@ -2,6 +2,7 @@ package com.example.smartbartender.data.hardware
 
 import android.util.Log
 import com.example.smartbartender.data.hardware.dto.CalibrationRequestDto
+import com.example.smartbartender.data.hardware.dto.CleaningRequestDto
 import com.example.smartbartender.data.hardware.dto.ErrorResponseDto
 import com.example.smartbartender.data.hardware.dto.JogRequestDto
 import com.example.smartbartender.data.hardware.dto.LedRequestDto
@@ -10,6 +11,7 @@ import com.example.smartbartender.data.hardware.dto.SlotsRequestDto
 import com.example.smartbartender.data.hardware.dto.toDto
 import com.example.smartbartender.data.local.BartenderPreferences
 import com.example.smartbartender.domain.model.CalibrationRun
+import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.MachineAddress
 import com.example.smartbartender.domain.model.MachineSnapshot
@@ -106,7 +108,7 @@ class HttpBartenderMachine(
             is MachineEvent.Snapshot -> {
                 val previous = _connection.value.snapshotOrNull
                 val firstConnect = previous == null
-                _connection.value = ConnectionState.Connected(event.snapshot.keepingEndedCalibration(previous))
+                _connection.value = ConnectionState.Connected(event.snapshot.keepingEndedRuns(previous))
                 _currentJob.value = event.snapshot.currentJob ?: _currentJob.value
                 // A reconnect means the machine may have rebooted, or been changed by another
                 // phone. Push what this app believes so the two converge.
@@ -123,21 +125,23 @@ class HttpBartenderMachine(
 
             is MachineEvent.Calibration -> updateSnapshot { it.copy(calibration = event.run) }
 
+            is MachineEvent.Cleaning -> updateSnapshot { it.copy(cleaning = event.run) }
+
             MachineEvent.Heartbeat -> Unit
         }
     }
 
     /**
-     * The machine's snapshot carries a calibration run only while it runs, and the last
-     * `calibration` event (with the results, or why it failed) is followed by a snapshot without
-     * one. Keep that ended run, so the calibration screen can still show it.
+     * The machine's snapshot carries a calibration or cleaning run only while it runs, and the
+     * last `calibration`/`cleaning` event (with the results, or why it failed) is followed by a
+     * snapshot without one. Keep those ended runs, so their screens can still show them.
      */
-    private fun MachineSnapshot.keepingEndedCalibration(previous: MachineSnapshot?): MachineSnapshot =
-        if (calibration == null && previous?.calibration?.status?.isTerminal == true) {
-            copy(calibration = previous.calibration)
-        } else {
-            this
-        }
+    private fun MachineSnapshot.keepingEndedRuns(previous: MachineSnapshot?): MachineSnapshot = copy(
+        calibration = calibration
+            ?: previous?.calibration?.takeIf { it.status.isTerminal },
+        cleaning = cleaning
+            ?: previous?.cleaning?.takeIf { it.status.isTerminal },
+    )
 
     private fun updateSnapshot(transform: (MachineSnapshot) -> MachineSnapshot) {
         _connection.update { state ->
@@ -229,6 +233,17 @@ class HttpBartenderMachine(
 
     override suspend fun abortCalibration(): Result<Unit> = command { base ->
         api.abortCalibration("$base/api/v1/calibration/abort")
+    }
+
+    override suspend fun startCleaning(pumps: List<Int>?, seconds: Double?, rounds: Int?): Result<CleaningRun> =
+        query { base ->
+            api.startCleaning("$base/api/v1/cleaning", CleaningRequestDto(pumps, seconds, rounds))
+                .toDomain()
+                .also { run -> updateSnapshot { it.copy(cleaning = run) } }
+        }
+
+    override suspend fun abortCleaning(): Result<Unit> = command { base ->
+        api.abortCleaning("$base/api/v1/cleaning/abort")
     }
 
     private inline fun <T> query(block: (base: String) -> T): Result<T> {

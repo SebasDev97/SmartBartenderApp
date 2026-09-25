@@ -56,6 +56,9 @@ import com.example.smartbartender.ui.screens.stats.StatsViewModel
 import com.example.smartbartender.ui.screens.calibration.CalibrationActions
 import com.example.smartbartender.ui.screens.calibration.CalibrationScreen
 import com.example.smartbartender.ui.screens.calibration.CalibrationViewModel
+import com.example.smartbartender.ui.screens.cleaning.CleaningActions
+import com.example.smartbartender.ui.screens.cleaning.CleaningScreen
+import com.example.smartbartender.ui.screens.cleaning.CleaningViewModel
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextPrimary
 
@@ -74,11 +77,13 @@ fun SmartBartenderApp() {
 
     val isTopLevel = TopLevelDestination.entries.any { it.route == currentRoute }
     val isPushed = currentRoute == Routes.DETAIL || currentRoute == Routes.CUSTOM_EDIT ||
-        currentRoute == Routes.CALIBRATION
+        currentRoute == Routes.CALIBRATION || currentRoute == Routes.CLEANING
     val title = if (currentRoute == Routes.CUSTOM_EDIT) {
         if (backStackEntry?.arguments?.getString("drinkId") == null) "New drink" else "Edit drink"
     } else if (currentRoute == Routes.CALIBRATION) {
         "Calibrate pumps"
+    } else if (currentRoute == Routes.CLEANING) {
+        "Clean pumps"
     } else TopLevelDestination.entries.firstOrNull { it.route == currentRoute }?.let {
         when (it) {
             TopLevelDestination.AVAILABLE -> "Smart Bartender"
@@ -218,6 +223,7 @@ fun SmartBartenderApp() {
                         onConnect = settingsViewModel::connect,
                         onTestConnection = settingsViewModel::testConnection,
                         onOpenCalibration = { navController.navigate(Routes.CALIBRATION) },
+                        onOpenCleaning = { navController.navigate(Routes.CLEANING) },
                         contentPadding = innerPadding,
                     )
                 }
@@ -232,6 +238,24 @@ fun SmartBartenderApp() {
                             onMeasureReference = viewModel::measureReference,
                             onTogglePump = viewModel::togglePump,
                             onJog = viewModel::jog,
+                            onStart = viewModel::start,
+                            onAbort = viewModel::abort,
+                        ),
+                        contentPadding = innerPadding,
+                    )
+                }
+
+                composable(Routes.CLEANING) {
+                    val viewModel: CleaningViewModel = viewModel(factory = CleaningViewModel.Factory)
+                    val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    CleaningScreen(
+                        state = state,
+                        led = led,
+                        actions = CleaningActions(
+                            onTogglePump = viewModel::togglePump,
+                            onSecondsChange = viewModel::setSeconds,
+                            onRoundsChange = viewModel::setRounds,
+                            onContainerConfirmedChange = viewModel::setContainerConfirmed,
                             onStart = viewModel::start,
                             onAbort = viewModel::abort,
                         ),

@@ -5,7 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-private val DeLuxeColorScheme = darkColorScheme(
+private val AppColorScheme = darkColorScheme(
     primary = NeonCyan,
     onPrimary = Obsidian,
     primaryContainer = Color_PrimaryContainer,
@@ -40,7 +40,7 @@ fun SmartBartenderTheme(
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = DeLuxeColorScheme,
+        colorScheme = AppColorScheme,
         typography = Typography,
         content = content,
     )

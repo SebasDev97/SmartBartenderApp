@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -45,7 +46,7 @@ import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextSecondary
 
-/** Machine settings: where the machine lives, and the De-Luxe LED show. */
+/** Machine settings: where the machine lives, and the LED show. */
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
@@ -57,6 +58,7 @@ fun SettingsScreen(
     onConnect: () -> Unit,
     onTestConnection: () -> Unit,
     onOpenCalibration: () -> Unit,
+    onOpenCleaning: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
@@ -93,7 +95,7 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "De-Luxe", accent = accent)
+        SectionHeader(title = "Lights", accent = accent)
         Spacer(Modifier.height(10.dp))
 
         GlassPanel(accent = if (led.enabled) accent else null, modifier = Modifier.fillMaxWidth()) {
@@ -154,18 +156,25 @@ fun SettingsScreen(
                     )
                 }
                 Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MetaChip(text = "Prototype build", accent = accent)
-                    MetaChip(text = "De-Luxe edition", accent = TextSecondary)
-                }
+                MetaChip(text = "Prototype build", accent = accent)
                 Spacer(Modifier.height(14.dp))
-                Button(
-                    onClick = onOpenCalibration,
-                    enabled = snapshot != null,
-                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Text("Calibrate pumps", fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onOpenCalibration,
+                        enabled = snapshot != null,
+                        colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Calibrate pumps", fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = onOpenCleaning,
+                        enabled = snapshot != null,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Clean pumps", fontWeight = FontWeight.Bold)
+                    }
                 }
                 if (snapshot != null && snapshot.sensorReferenceCm == null) {
                     Spacer(Modifier.height(8.dp))

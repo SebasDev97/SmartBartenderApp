@@ -27,6 +27,9 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "cal_result": ("Pump {pump}", "{rate:.2f} ml/s"),
     "cal_done": ("Calibration done", "See the app"),
     "cal_failed": ("Calibration", "{message}"),
+    "clean_pump": ("Cleaning {round}/{rounds}", "Pump {pump} {seconds:.0f} s"),
+    "clean_done": ("Cleaning done", "Refill bottles"),
+    "clean_failed": ("Cleaning", "{message}"),
 }
 
 

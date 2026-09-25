@@ -4,6 +4,9 @@ import com.example.smartbartender.domain.model.CalibrationPhase
 import com.example.smartbartender.domain.model.CalibrationResult
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CalibrationStatus
+import com.example.smartbartender.domain.model.CleaningPhase
+import com.example.smartbartender.domain.model.CleaningRun
+import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.LedShow
@@ -183,6 +186,7 @@ data class MachineStatusDto(
     val fault: FaultDto? = null,
     val sensor: SensorInfoDto = SensorInfoDto(),
     val calibration: CalibrationRunDto? = null,
+    val cleaning: CleaningRunDto? = null,
 ) {
     fun toDomain() = MachineSnapshot(
         machineId = machineId,
@@ -205,6 +209,7 @@ data class MachineStatusDto(
         glassDiameterMm = sensor.glassDiameterMm,
         calibratedAtMs = sensor.calibratedAtMs,
         calibration = calibration?.toDomain(),
+        cleaning = cleaning?.toDomain(),
     )
 }
 
@@ -277,6 +282,53 @@ data class CalibrationRequestDto(
 )
 
 @Serializable
+data class CleaningRunDto(
+    val runId: String = "",
+    val status: String = "",
+    val phase: String = "",
+    val pumps: List<Int> = emptyList(),
+    val rounds: Int = 1,
+    val seconds: Double = 0.0,
+    val currentRound: Int? = null,
+    val currentPump: Int? = null,
+    val progress: Float = 0f,
+    val message: String = "",
+    val error: FaultDto? = null,
+) {
+    fun toDomain() = CleaningRun(
+        runId = runId,
+        status = when (status) {
+            "running" -> CleaningStatus.RUNNING
+            "finished" -> CleaningStatus.FINISHED
+            "failed" -> CleaningStatus.FAILED
+            "aborted" -> CleaningStatus.ABORTED
+            else -> CleaningStatus.UNKNOWN
+        },
+        phase = when (phase) {
+            "pumping" -> CleaningPhase.PUMPING
+            "pausing" -> CleaningPhase.PAUSING
+            "done" -> CleaningPhase.DONE
+            else -> CleaningPhase.UNKNOWN
+        },
+        pumps = pumps,
+        rounds = rounds,
+        seconds = seconds,
+        currentRound = currentRound,
+        currentPump = currentPump,
+        progress = progress,
+        message = message,
+        error = error?.toDomain(),
+    )
+}
+
+@Serializable
+data class CleaningRequestDto(
+    val pumps: List<Int>? = null,
+    val seconds: Double? = null,
+    val rounds: Int? = null,
+)
+
+@Serializable
 data class JogRequestDto(val seconds: Double)
 
 @Serializable
@@ -308,7 +360,7 @@ fun PourRequest.toDto() = PourRequestDto(
     drinkId = drinkId,
     drinkName = drinkName,
     glass = glass,
-    items = items.map { PourItemDto(it.bottleId, it.ingredientName, it.ml) },
+    items = items.map { it.toDto() },
     manualSteps = manualSteps,
 )
 

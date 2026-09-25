@@ -54,6 +54,7 @@ class SimulatedBackend:
         self._area = glass_area_cm2(glass_diameter_mm)
         self._auto_serve = auto_serve_seconds
         self.running: set[int] = set()
+        self.started: list[int] = []  # every start_pump, in order — for tests
         self.lcd: tuple[str, str] = ("", "")
 
         self.glass_present = glass_present
@@ -83,6 +84,7 @@ class SimulatedBackend:
 
     async def start_pump(self, pump: int) -> None:
         self.running.add(pump)
+        self.started.append(pump)
         self._on_since.setdefault(pump, time.monotonic())
         log.info("pump %d ON", pump)
 

@@ -38,12 +38,12 @@ The debug APK lands in `app/build/outputs/apk/debug/`.
 | **Library**   | The full recipe book as a photo grid, with name search (`search.php?s=`) and a *surprise me* random pick (`random.php`).                                |
 | **Bottles**   | The bottle rack. Toggle the bottles that are physically loaded; the selection is persisted.                                                             |
 | **Stats**     | What this phone has poured: cocktails made, litres through each pump, most-made drinks, happy hour, alcohol-free share, and milestones.                 |
-| **Settings**  | The De-Luxe **LED show** switch, with a live preview of the strip, plus machine status.                                                                 |
+| **Settings**  | The **LED show** switch, with a live preview of the strip, plus machine status.                                                                         |
 
 Tapping any cocktail opens the **recipe detail**: photo, category, glass, alcoholic/non-alcoholic,
-ingredients with their measures, instructions, and a **Make this cocktail** button that runs
-the simulated pour — a step-by-step animation through the recipe, washed in the LED colours
-when the show is switched on.
+ingredients with their measures, instructions, and a **Make this cocktail** button that sends
+the pour to the machine and follows it live — a step-by-step animation of what the machine
+reports, washed in the LED colours when the show is switched on.
 
 ---
 
@@ -105,7 +105,7 @@ app/src/main/java/com/example/smartbartender/
 │   ├── components/  GlassPanel, LED simulation, skeletons, error/empty states, cards
 │   ├── navigation/  Routes, bottom bar, NavHost
 │   ├── screens/     available/ library/ bottles/ stats/ settings/ detail/  (screen + ViewModel)
-│   └── theme/       dark "De-Luxe" palette, type scale
+│   └── theme/       dark neon palette, type scale
 └── MainActivity.kt, SmartBartenderApplication.kt
 ```
 

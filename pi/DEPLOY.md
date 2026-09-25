@@ -44,6 +44,8 @@ git clone <your-repo-url> ~/SmartBartender
 cd ~/SmartBartender/pi
 ```
 
+A clone only carries what is committed and pushed — commit your latest changes first.
+
 **Option B — copy the folder from your computer:**
 
 ```bash
@@ -77,7 +79,7 @@ Check it:
 .venv/bin/python -m pytest tests/ -q
 ```
 
-28 tests should pass. If they do, the pour state machine and the whole API work on this Pi.
+74 tests should pass. If they do, the pour state machine and the whole API work on this Pi.
 
 ---
 
@@ -117,7 +119,7 @@ In the app: **Settings → Machine link**.
 2. Tap **Test**. It should report the machine's name, backend and firmware.
 3. Turn on **Use hardware machine**, then tap **Connect**.
 
-The status line turns to `Smart Bartender De-Luxe · simulated · 4 pumps`, and the Pi's log
+The status line turns to `Smart Bartender · simulated · 4 pumps`, and the Pi's log
 shows `client connected (1 total)`.
 
 Now open any cocktail and tap **Make this cocktail**. The overlay animates off the Pi's
@@ -138,6 +140,7 @@ If the button is greyed out, the app is not connected — check step 3 first.
 ```bash
 cd ~/SmartBartender/pi
 ls .venv/bin/python        # must exist — if not, do step 2 first
+cp -n config.example.yaml config.yaml   # the unit reads it; step 6 fills in the Arduino port
 sed -e "s|@USER@|$USER|g" -e "s|@DIR@|$PWD|g" bartender.service \
   | sudo tee /etc/systemd/system/bartender.service
 ```
@@ -157,7 +160,9 @@ journalctl -u bartender -f       # live log
 
 Note that the unit runs with `--arduino`, and the service **refuses to start without the
 Arduino attached** (systemd retries every 3 seconds). Until you have done step 6, either leave
-it disabled and keep starting the service by hand, or change `ExecStart` to use `--simulate`.
+it disabled and keep starting the service by hand, or swap `--arduino` for `--simulate` in
+`ExecStart` (keep `--config config.yaml`). Once it runs from `config.yaml`, the app shows the
+machine as `Smart Bartender`, the `machine.name` set there.
 
 ---
 
@@ -183,7 +188,7 @@ You'll see something like `usb-Arduino__www.arduino.cc__0043_...-if00`. Use that
 moves when another USB device is plugged in.
 
 ```bash
-cp config.example.yaml config.yaml
+cp -n config.example.yaml config.yaml   # already there if you did step 5
 nano config.yaml          # set arduino.port
 groups                    # must include dialout, or the port cannot be opened
 ```
@@ -205,23 +210,32 @@ LCD should read `Smart Bartender / Ready`.
 
 **Do this before trusting a single drink.** In the app: **Settings → Calibrate pumps**.
 
-1. **Measure reference.** Take every glass off the tray first. The machine measures the
+1. **Measure empty tray.** Take every glass off the tray first. The machine measures the
    distance to the empty tray; every glass is detected relative to it. Until this is done, the
    machine refuses to pour (`NOT_CALIBRATED`).
 2. **Prime each pump.** Hold a cup under the nozzle and tap **Test 2 s** per pump until liquid
    comes out steadily. A dry tube makes the first calibration far too low.
-3. **Calibrate.** Place the **empty 58 mm glass** under the nozzle and tap **Start**. Each pump
+3. **Calibrate.** Place the **empty 58 mm glass** under the nozzle and tap **Start calibration**. Each pump
    runs 3 seconds into it; the sensor measures the rise and the app shows ml/s per pump as it
    goes. The results are saved to `~/pump_calibration.json` and used straight away — no restart.
 
 If the group's calibration script already wrote `~/pump_calibration.json`, those rates are used
 from the start; recalibrate anyway once the tubes are primed (their pump 1 value was measured
 on a dry tube). The glass holds about four 3-second runs; if it gets too full the run stops
-with "Glass nearly full" and keeps the pumps it already measured — empty the glass and
+with "The glass is nearly full" and keeps the pumps it already measured — empty the glass and
 calibrate the rest.
 
 Expect ±15 % even after calibrating — peristaltic pumps are non-linear over short runs, which
 is exactly where a 15 ml pour lives. The measured volumes in the app show how close it gets.
+
+## Cleaning the pumps
+
+In the app: **Settings → Clean pumps**. Swap each bottle for one of warm water and put a large
+container under the nozzle — the screen shows roughly how much will come out. Tick that the
+container is in place and tap **Start cleaning**: the pumps run one at a time, 1 → 4, for as
+many rounds as you pick. The glass sensor isn't used. The defaults (seconds per pump, rounds,
+the pause between pumps) live in the `cleaning:` block of `config.yaml`; the app can override
+all but the pause.
 
 ---
 
@@ -233,8 +247,11 @@ sudo systemctl stop bartender
 journalctl -u bartender -n 50        # recent log
 journalctl -u bartender -f           # follow live
 
-# update after a code change
+# update after a code change — option A (clone), on the Pi:
 cd ~/SmartBartender && git pull && sudo systemctl restart bartender
+# option B (copy): re-run the rsync from step 1 on your Mac, then on the Pi:
+sudo systemctl restart bartender
+# either way, if requirements.txt changed: .venv/bin/pip install -r requirements.txt
 ```
 
 ---

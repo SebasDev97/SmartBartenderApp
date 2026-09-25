@@ -4,8 +4,8 @@ The Pi is the source of truth for a pour in progress. The app posts a plan once 
 renders whatever arrives over the WebSocket — it never runs its own timer. That is what
 lets a pour survive the app being backgrounded, killed, or reinstalled mid-drink.
 
-A calibration run works the same way: the app starts it, and the Pi pushes the whole run
-object on every phase change. Pours and calibration runs exclude each other.
+A calibration run and a cleaning run work the same way: the app starts one, and the Pi pushes
+the whole run object as it goes. Pours, calibration runs and cleaning runs exclude each other.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from collections import OrderedDict
 from typing import Optional
 
 from .calibration import CalibrationStore
-from .config import FIRMWARE, MAX_ITEM_ML, MAX_JOG_SECONDS, Config
+from .config import FIRMWARE, MAX_CLEANING_ROUNDS, MAX_ITEM_ML, MAX_JOG_SECONDS, Config
 from .events import EventBus, now_ms
 from .lcd import Lcd
 from .leds import LedController
@@ -27,6 +27,9 @@ from .models import (
     CalibrationResult,
     CalibrationRun,
     CalibrationStatus,
+    CleaningPhase,
+    CleaningRun,
+    CleaningStatus,
     ErrorCode,
     Fault,
     JobStatus,
@@ -111,6 +114,7 @@ class Machine:
         self._current: Optional[PourJob] = None
         self._task: Optional[asyncio.Task] = None
         self._run_cal: Optional[CalibrationRun] = None
+        self._run_clean: Optional[CleaningRun] = None
         self._abort = asyncio.Event()
         self._lock = asyncio.Lock()
         self._fault: Optional[Fault] = None
@@ -136,7 +140,11 @@ class Machine:
     def state(self) -> MachineState:
         if self._fault is not None:
             return MachineState.FAULT
-        if self.current_job is not None or self.current_calibration is not None:
+        if (
+            self.current_job is not None
+            or self.current_calibration is not None
+            or self.current_cleaning is not None
+        ):
             return MachineState.BUSY
         return MachineState.IDLE
 
@@ -156,6 +164,17 @@ class Machine:
     def last_calibration(self) -> Optional[CalibrationRun]:
         """The running calibration, or the one that ran last."""
         return self._run_cal
+
+    @property
+    def current_cleaning(self) -> Optional[CleaningRun]:
+        if self._run_clean is not None and not self._run_clean.status.terminal:
+            return self._run_clean
+        return None
+
+    @property
+    def last_cleaning(self) -> Optional[CleaningRun]:
+        """The running cleaning, or the one that ran last."""
+        return self._run_clean
 
     @property
     def reference_cm(self) -> Optional[float]:
@@ -185,6 +204,7 @@ class Machine:
                 calibrated_at_ms=self._calibration.calibrated_at_ms,
             ),
             calibration=self.current_calibration,
+            cleaning=self.current_cleaning,
         )
 
     @property
@@ -327,14 +347,7 @@ class Machine:
             self._require_idle()
             self._require_reference()
 
-            known = [slot.pump for slot in self._slots]
-            pumps = list(pumps) if pumps else known
-            for pump in pumps:
-                if pump not in known:
-                    raise MachineError(ErrorCode.UNKNOWN_BOTTLE, f"No pump {pump} on this machine", 422)
-            if len(set(pumps)) != len(pumps):
-                raise MachineError(ErrorCode.UNKNOWN_BOTTLE, "A pump is listed twice", 422)
-
+            pumps = self._pick_pumps(pumps)
             seconds = seconds if seconds is not None else self._config.calibration.pump_seconds
             if seconds <= 0 or seconds > MAX_JOG_SECONDS:
                 raise MachineError(
@@ -479,6 +492,148 @@ class Machine:
         run.phase = phase
         run.message = message
         self._publish_calibration(run)
+
+    # ------------------------------------------------------------------ cleaning
+
+    async def start_cleaning(
+        self,
+        pumps: Optional[list[int]] = None,
+        seconds: Optional[float] = None,
+        rounds: Optional[int] = None,
+    ) -> CleaningRun:
+        """Rinse the lines: every pump in turn, `rounds` times, into a container.
+
+        Needs neither loaded slots nor a tray reference — nothing is poured into a glass and
+        the sensor is never read. Bottle ids are ignored; the slot table is left as it is.
+        """
+        async with self._lock:
+            self._require_idle()
+            pumps = self._pick_pumps(pumps)
+            config = self._config.cleaning
+            seconds = seconds if seconds is not None else config.pump_seconds
+            rounds = rounds if rounds is not None else config.rounds
+            if seconds <= 0 or seconds > MAX_JOG_SECONDS:
+                raise MachineError(
+                    ErrorCode.VOLUME_OUT_OF_RANGE,
+                    f"Cleaning time must be between 0 and {MAX_JOG_SECONDS:.0f} seconds per pump",
+                    422,
+                )
+            if rounds < 1 or rounds > MAX_CLEANING_ROUNDS:
+                raise MachineError(
+                    ErrorCode.VOLUME_OUT_OF_RANGE,
+                    f"Cleaning takes between 1 and {MAX_CLEANING_ROUNDS} rounds",
+                    422,
+                )
+
+            run = CleaningRun(
+                run_id=str(uuid.uuid4()),
+                pumps=pumps,
+                rounds=rounds,
+                seconds=seconds,
+                started_at_ms=now_ms(),
+            )
+            self._run_clean = run
+            self._abort = asyncio.Event()
+            self._task = asyncio.create_task(self._clean(run), name="cleaning")
+            return run
+
+    async def abort_cleaning(self) -> CleaningRun:
+        run = self._run_clean
+        if run is None:
+            raise MachineError(ErrorCode.NOT_CONFIGURED, "No cleaning has run", 404)
+        if not run.status.terminal:
+            log.info("aborting cleaning %s", run.run_id)
+            run.message = "Stopping…"
+            self._abort.set()
+            self._publish_cleaning(run)
+        return run
+
+    async def _clean(self, run: CleaningRun) -> None:
+        """Run each pump for `run.seconds`, one after the other, round after round.
+
+        Pumps never overlap: one stops, a short pause, then the next starts.
+        """
+        loop = asyncio.get_running_loop()
+        planned = run.rounds * len(run.pumps) * run.seconds
+        done = 0.0  # pump-seconds finished so far
+        self._publish_snapshot()
+
+        try:
+            for lap in range(1, run.rounds + 1):
+                for pump in run.pumps:
+                    if self._abort.is_set():
+                        break
+                    if done > 0:
+                        self._clean_phase(run, CleaningPhase.PAUSING, f"Next up: pump {pump}")
+                        await self._sleep(self._config.cleaning.pause_seconds)
+                        if self._abort.is_set():
+                            break
+
+                    run.current_round = lap
+                    run.current_pump = pump
+                    self._clean_phase(
+                        run, CleaningPhase.PUMPING, f"Rinsing pump {pump} (round {lap} of {run.rounds})"
+                    )
+                    await self._lcd.show("clean_pump", round=lap, rounds=run.rounds, pump=pump, seconds=run.seconds)
+
+                    duration = run.seconds / self._speed
+                    started = loop.time()
+                    tick = 0
+                    await self._backend.start_pump(pump)
+                    try:
+                        while True:
+                            elapsed = loop.time() - started
+                            fraction = 1.0 if duration <= 0 else min(elapsed / duration, 1.0)
+                            run.progress = round(min((done + run.seconds * fraction) / planned, 1.0), 4)
+                            tick += 1
+                            if tick % 5 == 0:
+                                self._publish_cleaning(run)
+                            if fraction >= 1.0 or self._abort.is_set():
+                                break
+                            await asyncio.sleep(min(TICK_SECONDS, duration - elapsed))
+                    finally:
+                        await self._backend.stop_pump(pump)
+                    done += run.seconds
+                if self._abort.is_set():
+                    break
+
+            if self._abort.is_set():
+                run.status = CleaningStatus.ABORTED
+                run.message = "Stopped"
+                run.error = Fault(code=ErrorCode.ABORTED_BY_USER, message="Stopped from the app", recoverable=True)
+            else:
+                run.status = CleaningStatus.FINISHED
+                run.progress = 1.0
+                run.message = "Rinsed — put your bottles back"
+
+        except asyncio.CancelledError:
+            run.status = CleaningStatus.ABORTED
+            raise
+        except Exception as exc:  # noqa: BLE001 — any failure must still stop the pumps
+            log.exception("cleaning %s failed", run.run_id)
+            run.status = CleaningStatus.FAILED
+            run.message = str(exc)
+            run.error = Fault(code=ErrorCode.PUMP_FAULT, message=str(exc))
+        finally:
+            await self._backend.stop_all()
+            run.phase = CleaningPhase.DONE
+            run.current_round = None
+            run.current_pump = None
+            run.finished_at_ms = now_ms()
+            if run.status is CleaningStatus.FINISHED:
+                await self._lcd.show("clean_done")
+            elif run.status is CleaningStatus.FAILED:
+                await self._lcd.show("clean_failed", message=run.message)
+            else:
+                await self._lcd.show("idle")
+            self._publish_cleaning(run)
+            self._publish_snapshot()
+            log.info("cleaning %s -> %s", run.run_id, run.status.value)
+
+    def _clean_phase(self, run: CleaningRun, phase: CleaningPhase, message: str) -> None:
+        run.phase = phase
+        run.message = message
+        self._publish_cleaning(run)
 
     # ------------------------------------------------------------------ planning
 
@@ -767,6 +922,19 @@ class Machine:
             raise MachineError(ErrorCode.MACHINE_BUSY, "A pour is already running", 409, with_job=True)
         if self.current_calibration is not None:
             raise MachineError(ErrorCode.MACHINE_BUSY, "A calibration is running", 409)
+        if self.current_cleaning is not None:
+            raise MachineError(ErrorCode.MACHINE_BUSY, "Cleaning is running", 409)
+
+    def _pick_pumps(self, pumps: Optional[list[int]]) -> list[int]:
+        """The pumps a run asked for — every pump when none — checked against this machine."""
+        known = [slot.pump for slot in self._slots]
+        pumps = list(pumps) if pumps else known
+        for pump in pumps:
+            if pump not in known:
+                raise MachineError(ErrorCode.UNKNOWN_BOTTLE, f"No pump {pump} on this machine", 422)
+        if len(set(pumps)) != len(pumps):
+            raise MachineError(ErrorCode.UNKNOWN_BOTTLE, "A pump is listed twice", 422)
+        return pumps
 
     def _require_reference(self) -> None:
         if self.reference_cm is None:
@@ -786,6 +954,9 @@ class Machine:
 
     def _publish_calibration(self, run: CalibrationRun) -> None:
         self._bus.publish("calibration", run.model_dump(by_alias=True))
+
+    def _publish_cleaning(self, run: CleaningRun) -> None:
+        self._bus.publish("cleaning", run.model_dump(by_alias=True))
 
     def _publish_slots(self) -> None:
         self._bus.publish("slots", {"slots": [s.model_dump(by_alias=True) for s in self._slots]})

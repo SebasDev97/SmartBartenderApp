@@ -84,7 +84,7 @@ fun CalibrationScreen(
         }
         if (state.machineBusy) {
             Text(
-                text = "A drink is being poured. Calibration is available again once it is done.",
+                text = "The machine is busy. Calibration is available again once it is done.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = NeonCyan,
             )

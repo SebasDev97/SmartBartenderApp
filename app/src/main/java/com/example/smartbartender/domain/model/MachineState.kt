@@ -25,6 +25,8 @@ data class MachineSnapshot(
     val calibratedAtMs: Long? = null,
     /** The calibration run in progress, if any. The machine is BUSY meanwhile. */
     val calibration: CalibrationRun? = null,
+    /** The cleaning run in progress, if any. The machine is BUSY meanwhile. */
+    val cleaning: CleaningRun? = null,
 ) {
     val isSimulated: Boolean get() = backend == "simulated"
 }
@@ -122,6 +124,36 @@ data class CalibrationResult(
     val seconds: Double,
 )
 
+enum class CleaningStatus {
+    RUNNING, FINISHED, FAILED, ABORTED, UNKNOWN;
+
+    val isTerminal: Boolean get() = this != RUNNING
+}
+
+enum class CleaningPhase { PUMPING, PAUSING, DONE, UNKNOWN }
+
+/**
+ * One rinse of the pump lines: each pump in turn runs warm water into a container, [rounds]
+ * times over. Like a [CalibrationRun], only ever replaced whole.
+ */
+data class CleaningRun(
+    val runId: String,
+    val status: CleaningStatus,
+    val phase: CleaningPhase,
+    val pumps: List<Int>,
+    val rounds: Int,
+    /** Per pump, per round. */
+    val seconds: Double,
+    /** 1-based. */
+    val currentRound: Int?,
+    val currentPump: Int?,
+    /** Pump time done over pump time planned, computed by the machine. */
+    val progress: Float,
+    /** Already written for a person: "Rinsing pump 3 (round 1 of 2)". */
+    val message: String,
+    val error: MachineFault?,
+)
+
 /** One live reading of the ultrasonic sensor above the glass. */
 data class SensorReading(
     /** Null when the sensor got no valid echo. */
@@ -160,9 +192,6 @@ data class MachineAddress(
 
     companion object {
         const val DEFAULT_PORT = 8080
-
-        /** The Android emulator's alias for the machine running Android Studio. */
-        const val EMULATOR_HOST = "10.0.2.2"
     }
 }
 

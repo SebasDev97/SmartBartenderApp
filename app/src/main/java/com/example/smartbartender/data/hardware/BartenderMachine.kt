@@ -1,6 +1,7 @@
 package com.example.smartbartender.data.hardware
 
 import com.example.smartbartender.domain.model.CalibrationRun
+import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
@@ -52,4 +53,13 @@ interface BartenderMachine {
     suspend fun startCalibration(pumps: List<Int>?, seconds: Double? = null): Result<CalibrationRun>
 
     suspend fun abortCalibration(): Result<Unit>
+
+    /**
+     * Rinses the pump lines: each pump in turn runs for [seconds], [rounds] times over, into a
+     * container the user has put under the nozzle. The glass sensor is not used. Progress then
+     * arrives in the snapshot's `cleaning`. Nulls take the machine's defaults (every pump).
+     */
+    suspend fun startCleaning(pumps: List<Int>?, seconds: Double? = null, rounds: Int? = null): Result<CleaningRun>
+
+    suspend fun abortCleaning(): Result<Unit>
 }

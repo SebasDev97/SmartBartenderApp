@@ -3,7 +3,7 @@ package com.example.smartbartender.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * "De-Luxe" palette: near-black machined surfaces with neon LED accents.
+ * The app's palette: near-black machined surfaces with neon LED accents.
  */
 
 // Neon accents

@@ -16,6 +16,9 @@ MAX_ITEM_ML = 150.0
 #: Hard ceiling on a jog, so a slipped decimal can't empty a bottle.
 MAX_JOG_SECONDS = 30.0
 
+#: Hard ceiling on cleaning rounds, so a slipped digit can't run the pumps for an hour.
+MAX_CLEANING_ROUNDS = 5
+
 
 @dataclass
 class ServerConfig:
@@ -27,7 +30,7 @@ class ServerConfig:
 @dataclass
 class MachineConfig:
     id: str = "bartender-01"
-    name: str = "Smart Bartender De-Luxe"
+    name: str = "Smart Bartender"
     max_pour_ml: float = 250.0
 
 
@@ -73,6 +76,14 @@ class CalibrationConfig:
 
 
 @dataclass
+class CleaningConfig:
+    # The rinse: each pump in turn runs warm water into a container. No sensor is involved.
+    pump_seconds: float = 10.0  # per pump, per round; capped at MAX_JOG_SECONDS
+    rounds: int = 2  # how many times the whole row of pumps is run
+    pause_seconds: float = 1.0  # between pumps, so one relay is off before the next goes on
+
+
+@dataclass
 class LedConfig:
     brightness: float = 0.6  # ceiling; the app's brightness is scaled under it
 
@@ -86,6 +97,7 @@ class Config:
     led: LedConfig = field(default_factory=LedConfig)
     sensor: SensorConfig = field(default_factory=SensorConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    cleaning: CleaningConfig = field(default_factory=CleaningConfig)
 
     @property
     def pump_count(self) -> int:
@@ -117,4 +129,5 @@ def load_config(path: Optional[Union[str, Path]]) -> Config:
         led=LedConfig(**raw.get("led", {})),
         sensor=SensorConfig(**raw.get("sensor", {})),
         calibration=CalibrationConfig(**raw.get("calibration", {})),
+        cleaning=CleaningConfig(**raw.get("cleaning", {})),
     )

@@ -155,6 +155,40 @@ def test_calibrating_an_unknown_pump_is_rejected(client):
     assert client.post("/api/v1/calibration", json={"pumps": [9]}).status_code == 422
 
 
+def test_a_cleaning_run_is_started_and_reported(client, backend):
+    assert client.get("/api/v1/cleaning").status_code == 204
+
+    started = client.post("/api/v1/cleaning", json={"pumps": [1, 3], "seconds": 1.0, "rounds": 2})
+    assert started.status_code == 202
+    assert started.json()["status"] == "running"
+
+    finished = _wait_for(lambda: client.get("/api/v1/cleaning").json(), lambda r: r["status"] != "running")
+    assert finished["status"] == "finished", finished["message"]
+    assert finished["progress"] == 1.0
+    assert backend.started == [1, 3, 1, 3]
+    assert client.get("/api/v1/status").json()["cleaning"] is None
+
+
+def test_a_cleaning_run_shows_in_the_snapshot_and_can_be_stopped(client):
+    client.post("/api/v1/cleaning", json={"seconds": 20.0})
+    status = client.get("/api/v1/status").json()
+    assert status["state"] == "busy"
+    assert status["cleaning"]["pumps"] == [1, 2, 3, 4]
+
+    refused = client.post("/api/v1/pours", json=pour_body(str(uuid.uuid4())))
+    assert refused.status_code == 409
+    assert refused.json()["error"]["message"] == "Cleaning is running"
+
+    assert client.post("/api/v1/cleaning/abort").status_code == 202
+    run = _wait_for(lambda: client.get("/api/v1/cleaning").json(), lambda r: r["status"] != "running")
+    assert run["status"] == "aborted"
+    assert client.post("/api/v1/cleaning/abort").status_code == 200
+
+
+def test_cleaning_rejects_too_many_rounds(client):
+    assert client.post("/api/v1/cleaning", json={"rounds": 6}).status_code == 422
+
+
 def _wait_for(fetch, done, timeout=5.0):
     import time
 

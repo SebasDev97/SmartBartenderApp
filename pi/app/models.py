@@ -91,6 +91,23 @@ class CalibrationPhase(str, Enum):
     DONE = "done"
 
 
+class CleaningStatus(str, Enum):
+    RUNNING = "running"
+    FINISHED = "finished"
+    FAILED = "failed"
+    ABORTED = "aborted"
+
+    @property
+    def terminal(self) -> bool:
+        return self is not CleaningStatus.RUNNING
+
+
+class CleaningPhase(str, Enum):
+    PUMPING = "pumping"
+    PAUSING = "pausing"
+    DONE = "done"
+
+
 # --------------------------------------------------------------------------- objects
 
 
@@ -223,6 +240,28 @@ class CalibrationRequest(Wire):
     seconds: Optional[float] = None  # null: calibration.pump_seconds from config.yaml
 
 
+class CleaningRun(Wire):
+    run_id: str
+    status: CleaningStatus = CleaningStatus.RUNNING
+    phase: CleaningPhase = CleaningPhase.PUMPING
+    pumps: list[int] = Field(default_factory=list)
+    rounds: int = 1
+    seconds: float = 0.0  # per pump, per round
+    current_round: Optional[int] = None  # 1-based
+    current_pump: Optional[int] = None
+    progress: float = 0.0  # pump time done / pump time planned
+    message: str = ""
+    started_at_ms: Optional[int] = None
+    finished_at_ms: Optional[int] = None
+    error: Optional[Fault] = None
+
+
+class CleaningRequest(Wire):
+    pumps: Optional[list[int]] = None  # null: every pump
+    seconds: Optional[float] = None  # null: cleaning.pump_seconds from config.yaml
+    rounds: Optional[int] = None  # null: cleaning.rounds from config.yaml
+
+
 class MachineStatus(Wire):
     machine_id: str
     name: str
@@ -238,6 +277,7 @@ class MachineStatus(Wire):
     fault: Optional[Fault] = None
     sensor: SensorInfo = Field(default_factory=SensorInfo)
     calibration: Optional[CalibrationRun] = None  # only while one is running
+    cleaning: Optional[CleaningRun] = None  # only while one is running
 
 
 class Health(Wire):
@@ -271,7 +311,7 @@ class ErrorResponse(Wire):
 class Event(Wire):
     """One WebSocket frame. `data` is always a whole object, never a delta."""
 
-    type: Literal["snapshot", "pour", "led", "slots", "fault", "heartbeat", "calibration"]
+    type: Literal["snapshot", "pour", "led", "slots", "fault", "heartbeat", "calibration", "cleaning"]
     seq: int
     ts: int
     data: dict
