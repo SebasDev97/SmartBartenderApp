@@ -1,9 +1,9 @@
 # Smart Bartender — machine service
 
-The Raspberry Pi half of the project. It owns the pumps and the LED strip; the Android app
-owns the recipes. The Pi drives no pins itself: the pumps and the strip hang off an **Arduino
-on USB**, running the sketch in `firmware/bartender/`, and the Pi tells it what to do over
-serial. They meet at the HTTP + WebSocket contract in **[API.md](API.md)** — read
+The Raspberry Pi half of the project. It owns the pumps, the glass sensor and the display; the
+Android app owns the recipes. The Pi drives no pins itself: the pump relays, an ultrasonic
+sensor above the glass and a 16x2 LCD hang off an **Arduino on USB**, running the group's
+relay/sensor/LCD sketch, and the Pi tells it what to do over serial. They meet at the HTTP + WebSocket contract in **[API.md](API.md)** — read
 that first, it is the document both sides are written from.
 
 The service runs perfectly well with no hardware attached, which is the point: the app can be
@@ -22,7 +22,7 @@ python3 -m venv .venv
 # --speed 4 divides every delay, so a full drink takes a couple of seconds.
 .venv/bin/python -m app.main --simulate --speed 4 --port 8080
 
-# On the real machine, with the Arduino plugged in and flashed.
+# On the real machine, with the Arduino plugged in.
 cp config.example.yaml config.yaml    # then set arduino.port
 .venv/bin/python -m app.main --arduino --config config.yaml
 ```
@@ -52,7 +52,9 @@ API.md ends with a full curl cookbook, including a Margarita.
 `tests/test_api.py` drives the contract over HTTP; `tests/test_pour_job.py` drives the pour
 state machine directly, including that a crash mid-pour still stops every pump;
 `tests/test_arduino.py` pins the serial protocol against a fake board — retries, a pulled
-cable, reconnecting, and a whole pour.
+cable, reconnecting, distance parsing, the LCD, and a whole pour; `tests/test_sensor.py` and
+`tests/test_calibration.py` cover the glass detection, the volume maths and calibration runs
+against the simulator's model of a glass filling up.
 
 ## Layout
 
@@ -61,74 +63,110 @@ cable, reconnecting, and a whole pour.
 | `API.md` | **The contract.** If code and this file disagree, the file wins |
 | `DEPLOY.md` | Step-by-step: getting this running on a real Pi |
 | `app/models.py` | The contract in pydantic — snake_case here, camelCase on the wire |
-| `app/machine.py` | Slot table, job registry, and the pour state machine |
+| `app/machine.py` | Slot table, job registry, the pour state machine and calibration runs |
+| `app/sensor.py` | Glass detection and ml-from-level maths, ported from the group's scripts |
+| `app/calibration.py` | Pump rates and the tray reference, in `~/pump_calibration.json` |
+| `app/lcd.py` | Every string the 16x2 display shows |
+| `app/safe_off.py` | `ALL OFF` from a fresh process; systemd runs it after the service stops |
 | `app/api.py` | The routes and the `/events` WebSocket |
-| `app/leds.py` | The LED show, ported from the app's `Led.kt` so phone and strip match |
+| `app/leds.py` | LED show state, echoed to the app (this machine has no strip) |
 | `app/events.py` | Fan-out to every connected client |
-| `app/hardware/backend.py` | Eight methods. The entire hardware surface |
-| `app/hardware/simulated.py` | Logs instead of pouring. The default |
-| `app/hardware/arduino.py` | The serial link to the Arduino: retries, heartbeat, reconnect |
-| `firmware/bartender/bartender.ino` | The Arduino sketch. Pins, relay polarity, LED animations, and the serial protocol |
+| `app/hardware/backend.py` | Ten methods. The entire hardware surface |
+| `app/hardware/simulated.py` | Logs instead of pouring, and models the glass filling up. The default |
+| `app/hardware/arduino.py` | The serial link to the Arduino: the protocol, retries, reconnect |
+| `calibration.example.json` | The group's first calibration run, in the file's format |
 
 ## Wiring
 
 ```
 phone ──Wi-Fi──▶ Raspberry Pi ──USB serial──▶ Arduino ──▶ relays ──▶ pumps
-                                                      └──▶ WS2812 strip
+                                                      ├──▶ HC-SR04 ultrasonic sensor (above the glass)
+                                                      └──▶ 16x2 LCD
 ```
 
-**Pin numbers live only in the sketch** — `PUMP_PINS`, `LED_PIN` and `LED_COUNT` at the top of
-`bartender.ino`. The Pi addresses pumps by number (1–4) and never learns a pin. Change the
-wiring, change the sketch, flash it; the service does not move.
-
-Most relay boards are **active-low** — the pin goes LOW to close the relay. If your pumps run
-when they should be idle, flip `PUMP_ACTIVE_HIGH` in the sketch.
-
-The sketch must drive at least as many pumps as `config.yaml` lists; the service checks this
-at connect time and refuses to start otherwise.
+**Pin numbers live only in the Arduino sketch.** The Pi addresses pumps by number (1–4) and
+never learns a pin. The sketch is the group's own and is not part of this repo; this service
+treats it as a black box that speaks the protocol below.
 
 Pumps must have their own supply; neither board can drive a motor from its 5 V rail, and
 back-EMF from a DC motor will reset the Arduino or worse. Tie the grounds together.
 
 ### The serial link
 
-Plain text at 9600 baud, one command per line, one `OK`/`ERR` reply each — the full protocol
-is the comment at the top of `bartender.ino`. You can drive it by hand from the Arduino IDE's
-Serial Monitor (newline line ending) with `HELLO`, `ON 1`, `STOP`, `LED SPECTRUM 7000 150`.
+Plain text at **115200 baud**, one command per line, one reply line each:
 
-Opening the port resets most Arduinos, so the service waits two seconds for the bootloader
-before its first `HELLO`. If the cable is pulled mid-run, the next command reopens the port
-by itself; if the Arduino is missing at startup, the service exits and systemd retries.
+| Command | Reply | Effect |
+| --- | --- | --- |
+| `RELAY <n> ON` / `RELAY <n> OFF` | any line | One pump, 1-based |
+| `ALL OFF` | any line | Every pump |
+| `GET DIST` | `DIST <cm>` | Distance straight down; negative means no echo |
+| `LCD BOTH;<line 1>;<line 2>` | any line | The display; each line at most 16 characters |
+
+The acknowledgement text isn't specified, so any non-empty line counts as done. You can
+drive the board by hand from the Arduino IDE's Serial Monitor (115200, newline line ending).
+
+Opening the port resets most Arduinos, so the service waits two seconds for the bootloader,
+then sends `ALL OFF` and expects an answer. If the cable is pulled mid-run, the next command
+reopens the port by itself; if the Arduino is missing at startup, the service exits and
+systemd retries.
+
+## The glass sensor
+
+The sensor looks straight down at the tray. Everything is measured relative to the **empty
+tray** (`sensor.referenceCm`), which you measure once from the app (Settings → Calibrate pumps
+→ Measure reference) with nothing on the tray. Until then, pours are refused with
+`NOT_CALIBRATED`.
+
+- **Glass detection:** an empty glass reads 0.5–5 cm closer than the tray. A pour starts only
+  after three such readings in a row, and waits for as long as it takes (abort ends it). A glass
+  lifted mid-pour does not stop the recipe — the tray catches it.
+- **Measured volume:** after each pour step the level is measured (20 readings, extremes
+  dropped) and the rise × the area of the 58 mm glass becomes that step's `dispensedMl`. The
+  Stats tab in the app counts that. It assumes a straight glass centred under the sensor; any
+  other glass gives nonsense, which the plausibility check rejects in favour of the estimate.
 
 ## Calibrating the pumps
 
-`ml_per_s` in `config.yaml` is the only number that decides how much liquid ends up in the
-glass, and it is **measured, not guessed**. Pumps of the same model differ, and the same pump
-differs with a syrup versus a juice.
+The pump's `mlPerSecond` is the number that decides how much liquid ends up in the glass, and
+it is **measured, not guessed**. Pumps of the same model differ, and the same pump differs
+with a syrup versus a juice.
 
-For each pump:
+Calibrate from the app: **Settings → Calibrate pumps**. Or by hand:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/pumps/1/jog \
-     -H 'Content-Type: application/json' -d '{"seconds": 10}'
+curl -X POST localhost:8080/api/v1/pumps/1/jog -H 'Content-Type: application/json' -d '{"seconds": 2}'   # prime, into a cup
+curl -X POST localhost:8080/api/v1/sensor/reference                                                      # no glass on the tray
+curl -X POST localhost:8080/api/v1/calibration -H 'Content-Type: application/json' -d '{}'               # empty glass on the tray
 ```
 
-Catch the output in a measuring cup, then set `ml_per_s = measured_ml / 10`. Restart the
-service. Repeat per pump, with the bottle at the height it will actually sit — head height
-changes the rate.
+The run waits for the empty glass, then runs each pump for 3 s into it, waits 2 s, and turns the
+rise in level into ml/s. The results take effect at once and are saved to
+`~/pump_calibration.json` — the same file (and format) as the group's standalone calibration
+script, so a file it already wrote is used as-is. A calibrated pump ignores `ml_per_s` in
+`config.yaml`.
+
+**Prime the tubes first.** A dry tube spends its first seconds filling itself and reports far
+too little: in the group's first run pump 1 measured 25.9 ml in 3 s (8.6 ml/s) while its
+neighbours did about 19–25 ml/s.
 
 Expect ±15 % even after calibrating. Peristaltic pumps are non-linear over short runs, which
-is exactly where a 15 ml pour lives.
+is exactly where a 15 ml pour lives — the measured volume in the app shows how far off it is.
 
 ## Safety
 
-Every pour is wrapped in `try / finally: await backend.stop_all()`. An exception, a
-cancellation, a client vanishing mid-pour — every pump stops. `tests/test_pour_job.py` has a
-test for it. Do not remove that `finally`.
+Every pour and calibration run is wrapped in `try / finally: await backend.stop_all()`. An
+exception, a cancellation, a client vanishing mid-pour — every pump stops.
+`tests/test_pour_job.py` has a test for it. Do not remove that `finally`.
 
-That `finally` cannot help when the Pi itself dies, or the USB cable comes out mid-pour, so the
-sketch has a **watchdog**: the service pings the Arduino four times a second, and if 1.5
-seconds pass with no command, the Arduino stops every pump on its own.
+That `finally` cannot help when the service itself dies. `bartender.service` therefore runs
+`python -m app.safe_off` as `ExecStopPost`, which opens the port afresh (resetting the board)
+and sends `ALL OFF` after any stop, a crash included.
+
+**The Arduino sketch has no watchdog.** If the Pi hangs outright — not a crash, a freeze — or
+the USB cable comes out mid-pour, a closed relay stays closed. Ask whoever maintains the sketch
+to add one: "no command for 2 seconds → every relay off". The service already talks to the
+board several times a second during a pour (sensor readings, relay commands), and could send a
+periodic keep-alive for it.
 
 A dropped WebSocket does **not** abort a pour: the machine finishes the drink and the app
 re-attaches when it returns. A Wi-Fi hiccup should not leave half a Margarita in the glass.

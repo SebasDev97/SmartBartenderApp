@@ -17,8 +17,11 @@ fun reducePour(previous: PreparationState, job: PourJob): PreparationState {
         PourStep(
             label = step.label,
             detail = when {
-                step.kind == StepKind.POUR && step.ml != null ->
-                    "${step.dispensedMl?.toInt() ?: 0} / ${step.ml.toInt()} ml"
+                step.kind == StepKind.POUR && step.ml != null -> {
+                    val poured = "${step.dispensedMl?.toInt() ?: 0} / ${step.ml.toInt()} ml"
+                    // Once the sensor has measured the glass, the number is what really went in.
+                    if (step.measured) "$poured · measured" else poured
+                }
 
                 else -> step.detail
             },
@@ -34,6 +37,7 @@ fun reducePour(previous: PreparationState, job: PourJob): PreparationState {
         currentStepIndex = job.currentStepIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0)),
         jobId = job.jobId,
         remoteProgress = job.progress,
+        waitingForGlass = job.waitingForGlass && job.status.isLive,
         errorMessage = when (job.status) {
             JobStatus.FAILED -> job.error?.message ?: "The machine stopped unexpectedly"
             // Aborting was the user's own doing — not something to apologise for.
@@ -50,7 +54,7 @@ fun reducePour(previous: PreparationState, job: PourJob): PreparationState {
  */
 fun optimisticPreparation(plan: PourPlan, jobId: String, glass: String?): PreparationState {
     val steps = buildList {
-        add(PourStep("Positioning glass", glass ?: "Cocktail glass"))
+        add(PourStep("Place a glass", glass ?: "Cocktail glass"))
         plan.request.items.forEach { item ->
             add(PourStep("Pouring ${item.ingredientName}", "${item.ml.toInt()} ml"))
         }
@@ -64,5 +68,7 @@ fun optimisticPreparation(plan: PourPlan, jobId: String, glass: String?): Prepar
         currentStepIndex = 0,
         jobId = jobId,
         remoteProgress = null,
+        // Every pour starts by looking for a glass; the machine's first event confirms it.
+        waitingForGlass = true,
     )
 }

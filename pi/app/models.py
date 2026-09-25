@@ -68,6 +68,27 @@ class ErrorCode(str, Enum):
     VOLUME_OUT_OF_RANGE = "VOLUME_OUT_OF_RANGE"
     PUMP_FAULT = "PUMP_FAULT"
     ABORTED_BY_USER = "ABORTED_BY_USER"
+    NOT_CALIBRATED = "NOT_CALIBRATED"
+    SENSOR_FAULT = "SENSOR_FAULT"
+
+
+class CalibrationStatus(str, Enum):
+    RUNNING = "running"
+    FINISHED = "finished"
+    FAILED = "failed"
+    ABORTED = "aborted"
+
+    @property
+    def terminal(self) -> bool:
+        return self is not CalibrationStatus.RUNNING
+
+
+class CalibrationPhase(str, Enum):
+    WAITING_GLASS = "waiting_glass"
+    MEASURING = "measuring"
+    PUMPING = "pumping"
+    SETTLING = "settling"
+    DONE = "done"
 
 
 # --------------------------------------------------------------------------- objects
@@ -124,6 +145,9 @@ class PourStep(Wire):
     pump: Optional[int] = None
     ml: Optional[float] = None
     dispensed_ml: Optional[float] = None
+    # True once dispensed_ml comes from the sensor (the liquid level rose by that much),
+    # rather than from pump time x calibrated flow.
+    measured: bool = False
 
 
 class PourJob(Wire):
@@ -139,6 +163,8 @@ class PourJob(Wire):
     started_at_ms: Optional[int] = None
     finished_at_ms: Optional[int] = None
     error: Optional[Fault] = None
+    # True while the glass step waits for a glass under the nozzle. No pump runs until then.
+    waiting_for_glass: bool = False
 
 
 class PourItem(Wire):
@@ -156,6 +182,47 @@ class PourRequest(Wire):
     manual_steps: list[str] = Field(default_factory=list)
 
 
+class SensorInfo(Wire):
+    """What the machine knows about its ultrasonic sensor and the glass it measures."""
+
+    reference_cm: Optional[float] = None  # the empty tray; null until measured
+    glass_diameter_mm: float = 58.0
+    calibrated_at_ms: Optional[int] = None
+
+
+class SensorReading(Wire):
+    distance_cm: Optional[float] = None  # null when the sensor gave no valid echo
+    glass_present: bool = False
+    reference_cm: Optional[float] = None
+
+
+class CalibrationResult(Wire):
+    pump: int
+    ml_per_second: float
+    volume_ml: float
+    seconds: float
+    start_distance_cm: float
+    end_distance_cm: float
+
+
+class CalibrationRun(Wire):
+    run_id: str
+    status: CalibrationStatus = CalibrationStatus.RUNNING
+    phase: CalibrationPhase = CalibrationPhase.WAITING_GLASS
+    pumps: list[int] = Field(default_factory=list)
+    current_pump: Optional[int] = None
+    message: str = ""
+    results: list[CalibrationResult] = Field(default_factory=list)
+    started_at_ms: Optional[int] = None
+    finished_at_ms: Optional[int] = None
+    error: Optional[Fault] = None
+
+
+class CalibrationRequest(Wire):
+    pumps: Optional[list[int]] = None  # null: every pump
+    seconds: Optional[float] = None  # null: calibration.pump_seconds from config.yaml
+
+
 class MachineStatus(Wire):
     machine_id: str
     name: str
@@ -169,6 +236,8 @@ class MachineStatus(Wire):
     led: LedState
     current_job: Optional[PourJob] = None
     fault: Optional[Fault] = None
+    sensor: SensorInfo = Field(default_factory=SensorInfo)
+    calibration: Optional[CalibrationRun] = None  # only while one is running
 
 
 class Health(Wire):
@@ -202,7 +271,7 @@ class ErrorResponse(Wire):
 class Event(Wire):
     """One WebSocket frame. `data` is always a whole object, never a delta."""
 
-    type: Literal["snapshot", "pour", "led", "slots", "fault", "heartbeat"]
+    type: Literal["snapshot", "pour", "led", "slots", "fault", "heartbeat", "calibration"]
     seq: int
     ts: int
     data: dict

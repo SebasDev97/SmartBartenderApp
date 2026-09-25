@@ -1,9 +1,11 @@
 package com.example.smartbartender.data.hardware
 
+import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.SensorReading
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -33,4 +35,21 @@ interface BartenderMachine {
     suspend fun fetchJob(jobId: String): Result<PourJob>
 
     suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit>
+
+    /** Runs one pump for [seconds] — to prime its tube, or to hear the relay click. */
+    suspend fun jog(pump: Int, seconds: Double): Result<Unit>
+
+    /** One live reading of the glass sensor. */
+    suspend fun readSensor(): Result<SensorReading>
+
+    /** Measures the empty tray, which every glass is detected against. No glass on it first! */
+    suspend fun measureReference(): Result<SensorReading>
+
+    /**
+     * Starts a calibration run into the empty glass. Progress then arrives in the snapshot's
+     * `calibration`, pushed by the machine like a pour. Null [pumps] means every pump.
+     */
+    suspend fun startCalibration(pumps: List<Int>?, seconds: Double? = null): Result<CalibrationRun>
+
+    suspend fun abortCalibration(): Result<Unit>
 }

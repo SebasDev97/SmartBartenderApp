@@ -14,6 +14,8 @@ from .events import HEARTBEAT_SECONDS, EventBus
 from .machine import Machine, MachineError
 from .models import (
     ApiError,
+    CalibrationRequest,
+    CalibrationRun,
     ErrorCode,
     ErrorResponse,
     Health,
@@ -25,6 +27,7 @@ from .models import (
     MachineStatus,
     PourJob,
     PourRequest,
+    SensorReading,
     SlotsRequest,
     SlotsResponse,
 )
@@ -120,6 +123,33 @@ def create_app(config: Config, machine: Machine, bus: EventBus) -> FastAPI:
     async def jog(pump: int, body: JogRequest = Body(default=JogRequest(seconds=5.0))) -> JogResponse:
         seconds = await machine.jog(pump, body.seconds)
         return JogResponse(pump=pump, seconds=seconds)
+
+    @api.get("/sensor", response_model=SensorReading)
+    async def sensor() -> SensorReading:
+        return await machine.read_sensor()
+
+    @api.post("/sensor/reference", response_model=SensorReading)
+    async def sensor_reference() -> SensorReading:
+        return await machine.measure_reference()
+
+    @api.post("/calibration", response_model=CalibrationRun, status_code=202)
+    async def start_calibration(
+        body: CalibrationRequest = Body(default=CalibrationRequest()),
+    ) -> CalibrationRun:
+        return await machine.start_calibration(body.pumps, body.seconds)
+
+    @api.get("/calibration")
+    async def get_calibration():
+        run = machine.last_calibration
+        if run is None:
+            return Response(status_code=204)
+        return JSONResponse(content=run.model_dump(by_alias=True, mode="json"))
+
+    @api.post("/calibration/abort", response_model=CalibrationRun)
+    async def abort_calibration(response: Response) -> CalibrationRun:
+        run = await machine.abort_calibration()
+        response.status_code = 200 if run.status.terminal else 202
+        return run
 
     @api.websocket("/events")
     async def events(websocket: WebSocket) -> None:

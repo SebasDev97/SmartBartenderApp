@@ -1,8 +1,8 @@
 # Copy to config.yaml and edit. Only --arduino mode reads the `arduino` block;
-# --simulate ignores it and pretends every pump works perfectly.
+# --simulate ignores it and simulates the pumps, the sensor and a glass instead.
 #
-# There are no pin numbers here: the Pi drives no pins. Pumps and the LED strip hang off an
-# Arduino on USB, and its pins live in firmware/bartender/bartender.ino.
+# There are no pin numbers here: the Pi drives no pins. The pump relays, the ultrasonic sensor
+# and the LCD hang off an Arduino on USB, running the group's relay/sensor/LCD sketch.
 
 server:
   host: 0.0.0.0     # 0.0.0.0 so the phone on the LAN can reach it, not just localhost
@@ -19,11 +19,9 @@ machine:
 # or null for an empty slot. The app overwrites these via PUT /api/v1/slots anyway —
 # they are just the boot-up default.
 #
-# `ml_per_s` is measured, not guessed:
-#   curl -X POST http://localhost:8080/api/v1/pumps/1/jog -d '{"seconds":10}'
-#   ... catch the output in a measuring cup ...
-#   ml_per_s = measured_ml / 10
-# Do it per pump. They will not match each other.
+# `ml_per_s` is only the fallback. The real rates come from calibration (see `calibration`
+# below): the app's Settings -> Calibrate pumps runs each pump into the glass and measures the
+# rise with the sensor. A calibrated pump ignores its `ml_per_s` here.
 
 pumps:
   - { pump: 1, ml_per_s: 12.5, bottle_id: vodka }
@@ -35,7 +33,27 @@ arduino:
   # /dev/ttyACM0 for an Uno, /dev/ttyUSB0 for most Nano clones. The by-id path is better:
   # it never moves when another USB device is plugged in.  ls /dev/serial/by-id/
   port: /dev/ttyACM0
-  baud: 9600        # must match BAUD in the sketch
+  baud: 115200      # what the relay/sensor/LCD sketch listens at
 
 led:
   brightness: 0.6   # ceiling; the app's brightness slider is scaled under it
+
+# The ultrasonic sensor above the glass. Distances in cm, measured straight down.
+sensor:
+  glass_min_difference_cm: 0.5   # a glass reads this much closer than the empty tray...
+  glass_max_difference_cm: 5.0   # ...but no more (closer is a full glass, or a hand)
+  glass_confirmations: 3         # in-band readings in a row before a glass counts
+  poll_seconds: 0.3
+  samples: 20                    # readings per level measurement, of which...
+  discard: 2                     # ...the lowest and highest 2 are dropped
+  sample_gap_seconds: 0.05
+  settle_seconds: 1.0            # after a pump stops, before its volume is measured
+  glass_diameter_mm: 58          # the straight glass the ml maths assumes
+  min_distance_cm: 5.0           # calibration stops when the level gets this close
+
+# Pump rates and the tray reference, written by the app's calibration flow. The default path
+# is the file the group's standalone calibration script writes, so an existing one is used.
+calibration:
+  path: ~/pump_calibration.json
+  pump_seconds: 3.0              # each pump runs this long during calibration
+  settle_seconds: 2.0

@@ -1,6 +1,7 @@
 package com.example.smartbartender.data.hardware
 
 import android.util.Log
+import com.example.smartbartender.data.hardware.dto.CalibrationRequestDto
 import com.example.smartbartender.data.hardware.dto.ErrorResponseDto
 import com.example.smartbartender.data.hardware.dto.JogRequestDto
 import com.example.smartbartender.data.hardware.dto.LedRequestDto
@@ -8,11 +9,13 @@ import com.example.smartbartender.data.hardware.dto.SlotAssignmentDto
 import com.example.smartbartender.data.hardware.dto.SlotsRequestDto
 import com.example.smartbartender.data.hardware.dto.toDto
 import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.MachineAddress
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.SensorReading
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,8 +104,9 @@ class HttpBartenderMachine(
     private fun reduce(event: MachineEvent) {
         when (event) {
             is MachineEvent.Snapshot -> {
-                val firstConnect = _connection.value !is ConnectionState.Connected
-                _connection.value = ConnectionState.Connected(event.snapshot)
+                val previous = _connection.value.snapshotOrNull
+                val firstConnect = previous == null
+                _connection.value = ConnectionState.Connected(event.snapshot.keepingEndedCalibration(previous))
                 _currentJob.value = event.snapshot.currentJob ?: _currentJob.value
                 // A reconnect means the machine may have rebooted, or been changed by another
                 // phone. Push what this app believes so the two converge.
@@ -117,9 +121,23 @@ class HttpBartenderMachine(
 
             is MachineEvent.Fault -> updateSnapshot { it.copy(fault = event.fault) }
 
+            is MachineEvent.Calibration -> updateSnapshot { it.copy(calibration = event.run) }
+
             MachineEvent.Heartbeat -> Unit
         }
     }
+
+    /**
+     * The machine's snapshot carries a calibration run only while it runs, and the last
+     * `calibration` event (with the results, or why it failed) is followed by a snapshot without
+     * one. Keep that ended run, so the calibration screen can still show it.
+     */
+    private fun MachineSnapshot.keepingEndedCalibration(previous: MachineSnapshot?): MachineSnapshot =
+        if (calibration == null && previous?.calibration?.status?.isTerminal == true) {
+            copy(calibration = previous.calibration)
+        } else {
+            this
+        }
 
     private fun updateSnapshot(transform: (MachineSnapshot) -> MachineSnapshot) {
         _connection.update { state ->
@@ -190,12 +208,36 @@ class HttpBartenderMachine(
         )
     }
 
-    /** Runs one pump for [seconds] so its output can be measured. See `pi/README.md`. */
-    suspend fun jog(pump: Int, seconds: Double): Result<Unit> = command { base ->
+    override suspend fun jog(pump: Int, seconds: Double): Result<Unit> = command { base ->
         api.jog("$base/api/v1/pumps/$pump/jog", JogRequestDto(seconds))
     }
 
-    private suspend inline fun command(block: (base: String) -> Unit): Result<Unit> {
+    override suspend fun readSensor(): Result<SensorReading> = query { base ->
+        api.sensor("$base/api/v1/sensor").toDomain()
+    }
+
+    override suspend fun measureReference(): Result<SensorReading> = query { base ->
+        api.measureReference("$base/api/v1/sensor/reference").toDomain()
+    }
+
+    override suspend fun startCalibration(pumps: List<Int>?, seconds: Double?): Result<CalibrationRun> =
+        query { base ->
+            api.startCalibration("$base/api/v1/calibration", CalibrationRequestDto(pumps, seconds))
+                .toDomain()
+                .also { run -> updateSnapshot { it.copy(calibration = run) } }
+        }
+
+    override suspend fun abortCalibration(): Result<Unit> = command { base ->
+        api.abortCalibration("$base/api/v1/calibration/abort")
+    }
+
+    private inline fun <T> query(block: (base: String) -> T): Result<T> {
+        val base = address.takeIf { it.isConfigured }?.httpBase
+            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
+        return runCatching { block(base) }.mapError()
+    }
+
+    private inline fun command(block: (base: String) -> Unit): Result<Unit> {
         val base = address.takeIf { it.isConfigured }?.httpBase
             ?: return Result.failure(IOException(OFFLINE_MESSAGE))
         return runCatching { block(base) }.mapError()

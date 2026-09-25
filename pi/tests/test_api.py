@@ -105,3 +105,62 @@ def test_websocket_opens_with_a_full_snapshot(client):
         assert frame["type"] == "snapshot"
         assert frame["seq"] == 1
         assert frame["data"]["machineId"] == "bartender-01"
+
+
+def test_status_reports_the_sensor(client):
+    sensor = client.get("/api/v1/status").json()["sensor"]
+    assert sensor["referenceCm"] == 16.3  # the simulator knows its tray
+    assert sensor["glassDiameterMm"] == 58.0
+
+
+def test_a_live_sensor_reading_sees_the_simulated_glass(client):
+    reading = client.get("/api/v1/sensor").json()
+    assert reading["distanceCm"] == 15.6
+    assert reading["glassPresent"] is True
+
+
+def test_the_reference_can_be_measured(client, backend):
+    backend.remove_glass()
+    reading = client.post("/api/v1/sensor/reference").json()
+    assert reading["referenceCm"] == 16.3
+
+
+def test_a_calibration_run_is_started_and_reported(client):
+    assert client.get("/api/v1/calibration").status_code == 204
+
+    started = client.post("/api/v1/calibration", json={"pumps": [2], "seconds": 1.0})
+    assert started.status_code == 202
+    run = started.json()
+    assert run["status"] == "running" and run["pumps"] == [2]
+
+    finished = _wait_for(lambda: client.get("/api/v1/calibration").json(), lambda r: r["status"] != "running")
+    assert finished["status"] == "finished", finished["message"]
+    assert finished["results"][0]["pump"] == 2
+
+
+def test_calibration_and_pouring_refuse_each_other(client, backend):
+    backend.remove_glass()  # so the calibration waits for a glass and stays busy
+    client.post("/api/v1/calibration", json={})
+    refused = client.post("/api/v1/pours", json=pour_body(str(uuid.uuid4())))
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "MACHINE_BUSY"
+    assert client.get("/api/v1/status").json()["calibration"]["phase"] == "waiting_glass"
+
+    client.post("/api/v1/calibration/abort")
+    run = _wait_for(lambda: client.get("/api/v1/calibration").json(), lambda r: r["status"] != "running")
+    assert run["status"] == "aborted"
+
+
+def test_calibrating_an_unknown_pump_is_rejected(client):
+    assert client.post("/api/v1/calibration", json={"pumps": [9]}).status_code == 422
+
+
+def _wait_for(fetch, done, timeout=5.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    value = fetch()
+    while not done(value) and time.monotonic() < deadline:
+        time.sleep(0.02)
+        value = fetch()
+    return value

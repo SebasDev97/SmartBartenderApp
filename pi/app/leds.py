@@ -1,9 +1,9 @@
 """The LED show's state: which mode the strip is in, and the pour's fill level.
 
-The animation itself runs on the Arduino (firmware/bartender/bartender.ino), which holds a
-straight port of ledColorAt() from app/src/main/java/com/example/smartbartender/ui/components/Led.kt
-over the same seven colours — same spectrum, same 7000 ms lap, so the phone and the strip
-match. The Pi only says which mode to show; it never streams frames over the serial link.
+The current machine has no LED strip — the Arduino backend accepts these calls and drives
+nothing (BackendInfo.has_leds is False). The state is still kept and echoed back, because the
+app's on-screen LED show reads it, and a backend with a strip can pick it up unchanged: the
+Pi only ever says which mode to show, it never streams frames.
 """
 
 from __future__ import annotations

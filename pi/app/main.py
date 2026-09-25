@@ -31,7 +31,16 @@ def build(args: argparse.Namespace):
 
         backend = ArduinoBackend(config)
     else:
-        backend = SimulatedBackend(pump_count=config.pump_count)
+        backend = SimulatedBackend(
+            pump_count=config.pump_count,
+            # The "true" flow of each simulated pump. A calibration run should find these again.
+            flows={p.pump: p.ml_per_s for p in config.pumps},
+            speed=args.speed,
+            glass_diameter_mm=config.sensor.glass_diameter_mm,
+            # Someone takes the drink away once the pumps have been quiet for a while, so a
+            # long demo never ends with a glass too full to pour into.
+            auto_serve_seconds=5.0,
+        )
 
     bus = EventBus()
     machine = Machine(config, backend, bus, speed=args.speed)
@@ -54,7 +63,7 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--simulate", action="store_true", help="drive nothing, just log (default)")
     mode.add_argument(
-        "--arduino", action="store_true", help="drive the real pumps and LEDs through the Arduino"
+        "--arduino", action="store_true", help="drive the real pumps, sensor and LCD through the Arduino"
     )
     parser.add_argument("--config", help="path to config.yaml")
     parser.add_argument("--host", help="override server.host")

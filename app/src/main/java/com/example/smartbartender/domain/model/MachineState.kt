@@ -19,6 +19,12 @@ data class MachineSnapshot(
     val led: LedShow,
     val currentJob: PourJob?,
     val fault: MachineFault?,
+    /** Sensor to the empty tray. Null until measured — the machine refuses to pour until then. */
+    val sensorReferenceCm: Double? = null,
+    val glassDiameterMm: Double = 58.0,
+    val calibratedAtMs: Long? = null,
+    /** The calibration run in progress, if any. The machine is BUSY meanwhile. */
+    val calibration: CalibrationRun? = null,
 ) {
     val isSimulated: Boolean get() = backend == "simulated"
 }
@@ -66,6 +72,8 @@ data class JobStep(
     val pump: Int?,
     val ml: Double?,
     val dispensedMl: Double?,
+    /** True once [dispensedMl] is what the glass sensor measured, not a pump-time estimate. */
+    val measured: Boolean = false,
 )
 
 data class PourJob(
@@ -82,6 +90,44 @@ data class PourJob(
     val error: MachineFault?,
     /** Machine clock, set once the job ends. Null while it is still live. */
     val finishedAtMs: Long? = null,
+    /** The glass step is waiting for a glass under the nozzle; nothing pours until then. */
+    val waitingForGlass: Boolean = false,
+)
+
+enum class CalibrationStatus {
+    RUNNING, FINISHED, FAILED, ABORTED, UNKNOWN;
+
+    val isTerminal: Boolean get() = this != RUNNING
+}
+
+enum class CalibrationPhase { WAITING_GLASS, MEASURING, PUMPING, SETTLING, DONE, UNKNOWN }
+
+/** One calibration run on the machine. Like a [PourJob], only ever replaced whole. */
+data class CalibrationRun(
+    val runId: String,
+    val status: CalibrationStatus,
+    val phase: CalibrationPhase,
+    val pumps: List<Int>,
+    val currentPump: Int?,
+    /** Already written for a person: "Pump 2 runs for 3 s", "The glass is nearly full…". */
+    val message: String,
+    val results: List<CalibrationResult>,
+    val error: MachineFault?,
+)
+
+data class CalibrationResult(
+    val pump: Int,
+    val mlPerSecond: Double,
+    val volumeMl: Double,
+    val seconds: Double,
+)
+
+/** One live reading of the ultrasonic sensor above the glass. */
+data class SensorReading(
+    /** Null when the sensor got no valid echo. */
+    val distanceCm: Double?,
+    val glassPresent: Boolean,
+    val referenceCm: Double?,
 )
 
 /** What the app asks the machine to pour.*/

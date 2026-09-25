@@ -1,5 +1,7 @@
 package com.example.smartbartender.data.hardware
 
+import com.example.smartbartender.data.hardware.dto.CalibrationRequestDto
+import com.example.smartbartender.data.hardware.dto.CalibrationRunDto
 import com.example.smartbartender.data.hardware.dto.HealthDto
 import com.example.smartbartender.data.hardware.dto.JogRequestDto
 import com.example.smartbartender.data.hardware.dto.JogResponseDto
@@ -8,6 +10,7 @@ import com.example.smartbartender.data.hardware.dto.LedRequestDto
 import com.example.smartbartender.data.hardware.dto.MachineStatusDto
 import com.example.smartbartender.data.hardware.dto.PourJobDto
 import com.example.smartbartender.data.hardware.dto.PourRequestDto
+import com.example.smartbartender.data.hardware.dto.SensorReadingDto
 import com.example.smartbartender.data.hardware.dto.SlotsRequestDto
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -55,4 +58,16 @@ interface BartenderApi {
 
     @POST
     suspend fun jog(@Url url: String, @Body body: JogRequestDto): JogResponseDto
+
+    @GET
+    suspend fun sensor(@Url url: String): SensorReadingDto
+
+    @POST
+    suspend fun measureReference(@Url url: String): SensorReadingDto
+
+    @POST
+    suspend fun startCalibration(@Url url: String, @Body body: CalibrationRequestDto): CalibrationRunDto
+
+    @POST
+    suspend fun abortCalibration(@Url url: String): CalibrationRunDto
 }

@@ -3,9 +3,10 @@ package com.example.smartbartender
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.hardware.PourRecorder
 import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CocktailSummary
-import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.LedShow
@@ -18,6 +19,7 @@ import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourOutcome
 import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.SensorReading
 import com.example.smartbartender.domain.model.StepKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +47,12 @@ class PourRecorderTest {
         val fetched = mutableListOf<String>()
 
         override suspend fun testConnection(host: String, port: Int) = Result.success(snapshot())
+        override suspend fun jog(pump: Int, seconds: Double) = Result.success(Unit)
+        override suspend fun readSensor(): Result<SensorReading> = error("not used")
+        override suspend fun measureReference(): Result<SensorReading> = error("not used")
+        override suspend fun startCalibration(pumps: List<Int>?, seconds: Double?): Result<CalibrationRun> =
+            error("not used")
+        override suspend fun abortCalibration() = Result.success(Unit)
         override suspend fun pushSlots(slots: List<String?>) = Result.success(Unit)
         override suspend fun startPour(request: PourRequest): Result<PourJob> = error("not used")
         override suspend fun abort(jobId: String) = Result.success(Unit)

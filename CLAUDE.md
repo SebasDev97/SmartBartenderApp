@@ -7,9 +7,12 @@ This file provides guidance to Claude Code when working with code in this reposi
 Android companion app for the "Smart Bartender" cocktail machine (single `:app` module,
 Kotlin + Compose), plus the machine's own service in `pi/` (Python + FastAPI). Recipes come
 live from TheCocktailDB v1 using the public test key `1`, baked into the base URL in
-`data/remote/NetworkModule.kt`. Pours and the LED strip run on a Raspberry Pi over HTTP +
-WebSocket — the Pi drives no GPIO itself; it commands an Arduino over USB serial, running the
-sketch in `pi/firmware/bartender/`, which owns every pin; `pi/API.md` is the contract between the two halves and the first thing to read
+`data/remote/NetworkModule.kt`. Pours run on a Raspberry Pi over HTTP + WebSocket — the Pi
+drives no GPIO itself; it commands an Arduino over USB serial (pump relays, an ultrasonic sensor
+above the glass, a 16x2 LCD; no LED strip). The Arduino runs the group's own sketch, which is
+**not in this repo**: `pi/app/hardware/arduino.py` treats it as a black box speaking `RELAY n
+ON|OFF`, `ALL OFF`, `GET DIST`, `LCD BOTH;a;b` at 115200 baud, and the sketch has no watchdog.
+`pi/API.md` is the contract between the two halves and the first thing to read
 before changing either side, and `pi/DEPLOY.md` is the walk-through for getting the service
 onto real hardware. `README.md` holds the product-level tour; this file covers what
 you need to change code safely.
@@ -108,7 +111,7 @@ killed, and **no foreground service is needed**. `HttpBartenderMachine` lives in
 application-scoped `CoroutineScope` created in `AppContainer` for exactly that reason; putting
 it in a `viewModelScope` would blind the app the moment someone leaves the detail screen.
 
-Four rules that are easy to break:
+Five rules that are easy to break:
 
 1. **The app mints the `jobId`** (a UUID) and sends it as `Idempotency-Key`. That is what makes
    a retry safe — the machine returns the running job instead of pouring a second drink.
@@ -117,7 +120,15 @@ Four rules that are easy to break:
 3. **`slot_assignment` is positional.** Index 0 is pump 1. `BartenderPreferences.writeRack()`
    is the only place the rack is written, and it writes membership and slot order in one
    `dataStore.edit {}` so they cannot drift. Getting this wrong pours the wrong liquid.
-4. **Cleartext HTTP is enabled app-wide** in `res/xml/network_security_config.xml`, because the
+4. **The glass sensor gates every pour.** The Pi waits (no timeout) for an empty glass before
+   the first pump, reported as `PourJob.waitingForGlass`, and refuses to pour at all
+   (`503 NOT_CALIBRATED`) until the empty tray has been measured. After each pour step it swaps
+   the time-based `dispensedMl` for the sensor's measurement (`measured: true`), which is what
+   the Stats tab then counts. Pump rates come from the Pi's calibration file
+   (`~/pump_calibration.json`), driven from `ui/screens/calibration/`; a finished run is kept in
+   the snapshot by `HttpBartenderMachine.keepingEndedCalibration` because the Pi's own snapshot
+   only carries a running one.
+5. **Cleartext HTTP is enabled app-wide** in `res/xml/network_security_config.xml`, because the
    machine is plain `http://` on a LAN and its address is typed in at runtime. Without it every
    request fails with `CLEARTEXT communication ... not permitted`, which looks exactly like the
    machine being offline.
@@ -175,6 +186,11 @@ When touching the availability engine or the catalog, extend `AvailabilityTest` 
 — it is a pure function precisely so the riskiest code in the project is cheap to test.
 
 The machine service has its own suite under `pi/tests/` (`pytest`, `TestClient` +
-`SimulatedBackend`), including a test that a crash mid-pour still stops every pump.
-`test_arduino.py` drives `ArduinoBackend` against a `FakeBoard` that answers like the sketch —
-change the serial protocol in `arduino.py`, `bartender.ino` and that fake together.
+`SimulatedBackend`), including a test that a crash mid-pour still stops every pump. The
+simulator models the tray, a glass and the rising liquid, so glass detection, measured volumes
+and calibration are tested end to end; it must run at the same `speed` as the `Machine` (see
+`SPEED` in `conftest.py`) or the glass fills slower than the pumps "pour".
+`test_arduino.py` drives `ArduinoBackend` against a `FakeBoard` that answers like the group's
+sketch — change the serial protocol in `arduino.py` and that fake together, and only after
+checking what the real sketch answers. `MachineContractTest`'s JSON strings are captured from
+`--simulate`, not hand-written.

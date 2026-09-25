@@ -2,9 +2,10 @@ package com.example.smartbartender
 
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CocktailSummary
-import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.LedShow
@@ -14,6 +15,7 @@ import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.SensorReading
 import com.example.smartbartender.domain.model.StepKind
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +55,12 @@ class MachinePourTest {
         override val currentJob: StateFlow<PourJob?> = jobs.asStateFlow()
 
         override suspend fun testConnection(host: String, port: Int) = Result.success(snapshot())
+        override suspend fun jog(pump: Int, seconds: Double) = Result.success(Unit)
+        override suspend fun readSensor(): Result<SensorReading> = error("not used")
+        override suspend fun measureReference(): Result<SensorReading> = error("not used")
+        override suspend fun startCalibration(pumps: List<Int>?, seconds: Double?): Result<CalibrationRun> =
+            error("not used")
+        override suspend fun abortCalibration() = Result.success(Unit)
 
         override suspend fun pushSlots(slots: List<String?>): Result<Unit> {
             pushedSlots += slots

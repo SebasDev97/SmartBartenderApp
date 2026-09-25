@@ -22,15 +22,19 @@ MARGARITA_ITEMS = [
 ]
 
 
+#: Every delay is divided by this, so a whole pour takes a fraction of a second. The simulated
+#: backend must run at the same speed, or the glass fills 50x slower than the pumps "pour".
+SPEED = 50.0
+
+
 @pytest.fixture
 def backend():
-    return SimulatedBackend(4)
+    return SimulatedBackend(4, speed=SPEED)
 
 
 @pytest.fixture
 def machine(backend):
-    # speed=50 keeps a whole pour under a tenth of a second.
-    return Machine(load_config(None), backend, EventBus(), speed=50.0)
+    return Machine(load_config(None), backend, EventBus(), speed=SPEED)
 
 
 @pytest.fixture

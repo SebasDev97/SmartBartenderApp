@@ -1,0 +1,37 @@
+{
+    "glassDiameterMm": 58.0,
+    "pumpTimeSeconds": 3.0,
+    "distanceMeasurements": 20,
+    "discardedMeasurements": 2,
+    "settleTimeSeconds": 2.0,
+    "pumps": {
+        "1": {
+            "mlPerSecond": 18.623,
+            "volumeMl": 25.93,
+            "pumpTimeSeconds": 3.006,
+            "startDistanceCm": 15.6,
+            "endDistanceCm": 14.62
+        },
+        "2": {
+            "mlPerSecond": 18.719,
+            "volumeMl": 56.47,
+            "pumpTimeSeconds": 3.017,
+            "startDistanceCm": 14.61,
+            "endDistanceCm": 12.47
+        },
+        "3": {
+            "mlPerSecond": 24.704,
+            "volumeMl": 74.31,
+            "pumpTimeSeconds": 3.008,
+            "startDistanceCm": 12.52,
+            "endDistanceCm": 9.71
+        },
+        "4": {
+            "mlPerSecond": 23.621,
+            "volumeMl": 71.01,
+            "pumpTimeSeconds": 3.006,
+            "startDistanceCm": 9.84,
+            "endDistanceCm": 7.16
+        }
+    }
+}

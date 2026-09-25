@@ -1,5 +1,9 @@
 package com.example.smartbartender.data.hardware.dto
 
+import com.example.smartbartender.domain.model.CalibrationPhase
+import com.example.smartbartender.domain.model.CalibrationResult
+import com.example.smartbartender.domain.model.CalibrationRun
+import com.example.smartbartender.domain.model.CalibrationStatus
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.LedShow
@@ -10,6 +14,7 @@ import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourItem
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.SensorReading
 import com.example.smartbartender.domain.model.StepKind
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -86,6 +91,7 @@ data class PourStepDto(
     val pump: Int? = null,
     val ml: Double? = null,
     val dispensedMl: Double? = null,
+    val measured: Boolean = false,
 ) {
     fun toDomain() = JobStep(
         index = index,
@@ -102,6 +108,7 @@ data class PourStepDto(
         pump = pump,
         ml = ml,
         dispensedMl = dispensedMl,
+        measured = measured,
     )
 }
 
@@ -118,6 +125,7 @@ data class PourJobDto(
     val dispensedMl: Double = 0.0,
     val error: FaultDto? = null,
     val finishedAtMs: Long? = null,
+    val waitingForGlass: Boolean = false,
 ) {
     fun toDomain() = PourJob(
         jobId = jobId,
@@ -139,6 +147,7 @@ data class PourJobDto(
         dispensedMl = dispensedMl,
         error = error?.toDomain(),
         finishedAtMs = finishedAtMs,
+        waitingForGlass = waitingForGlass,
     )
 }
 
@@ -172,6 +181,8 @@ data class MachineStatusDto(
     val led: LedDto = LedDto(),
     val currentJob: PourJobDto? = null,
     val fault: FaultDto? = null,
+    val sensor: SensorInfoDto = SensorInfoDto(),
+    val calibration: CalibrationRunDto? = null,
 ) {
     fun toDomain() = MachineSnapshot(
         machineId = machineId,
@@ -190,8 +201,80 @@ data class MachineStatusDto(
         led = led.toDomain(),
         currentJob = currentJob?.toDomain(),
         fault = fault?.toDomain(),
+        sensorReferenceCm = sensor.referenceCm,
+        glassDiameterMm = sensor.glassDiameterMm,
+        calibratedAtMs = sensor.calibratedAtMs,
+        calibration = calibration?.toDomain(),
     )
 }
+
+@Serializable
+data class SensorInfoDto(
+    val referenceCm: Double? = null,
+    val glassDiameterMm: Double = 58.0,
+    val calibratedAtMs: Long? = null,
+)
+
+@Serializable
+data class SensorReadingDto(
+    val distanceCm: Double? = null,
+    val glassPresent: Boolean = false,
+    val referenceCm: Double? = null,
+) {
+    fun toDomain() = SensorReading(distanceCm = distanceCm, glassPresent = glassPresent, referenceCm = referenceCm)
+}
+
+@Serializable
+data class CalibrationResultDto(
+    val pump: Int = 0,
+    val mlPerSecond: Double = 0.0,
+    val volumeMl: Double = 0.0,
+    val seconds: Double = 0.0,
+) {
+    fun toDomain() = CalibrationResult(pump = pump, mlPerSecond = mlPerSecond, volumeMl = volumeMl, seconds = seconds)
+}
+
+@Serializable
+data class CalibrationRunDto(
+    val runId: String = "",
+    val status: String = "",
+    val phase: String = "",
+    val pumps: List<Int> = emptyList(),
+    val currentPump: Int? = null,
+    val message: String = "",
+    val results: List<CalibrationResultDto> = emptyList(),
+    val error: FaultDto? = null,
+) {
+    fun toDomain() = CalibrationRun(
+        runId = runId,
+        status = when (status) {
+            "running" -> CalibrationStatus.RUNNING
+            "finished" -> CalibrationStatus.FINISHED
+            "failed" -> CalibrationStatus.FAILED
+            "aborted" -> CalibrationStatus.ABORTED
+            else -> CalibrationStatus.UNKNOWN
+        },
+        phase = when (phase) {
+            "waiting_glass" -> CalibrationPhase.WAITING_GLASS
+            "measuring" -> CalibrationPhase.MEASURING
+            "pumping" -> CalibrationPhase.PUMPING
+            "settling" -> CalibrationPhase.SETTLING
+            "done" -> CalibrationPhase.DONE
+            else -> CalibrationPhase.UNKNOWN
+        },
+        pumps = pumps,
+        currentPump = currentPump,
+        message = message,
+        results = results.map(CalibrationResultDto::toDomain),
+        error = error?.toDomain(),
+    )
+}
+
+@Serializable
+data class CalibrationRequestDto(
+    val pumps: List<Int>? = null,
+    val seconds: Double? = null,
+)
 
 @Serializable
 data class JogRequestDto(val seconds: Double)

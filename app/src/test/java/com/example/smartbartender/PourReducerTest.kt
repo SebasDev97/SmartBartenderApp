@@ -125,4 +125,28 @@ class PourReducerTest {
         val state = reducePour(PreparationState(), job(JobStatus.RUNNING, stepIndex = 99))
         assertEquals(3, state.currentStepIndex)
     }
+
+    @Test
+    fun `waiting for a glass is shown until the machine sees one`() {
+        val waiting = reducePour(PreparationState(), job(JobStatus.RUNNING).copy(waitingForGlass = true))
+        assertTrue(waiting.waitingForGlass)
+
+        val detected = reducePour(waiting, job(JobStatus.RUNNING, stepIndex = 1, progress = 0.1f))
+        assertFalse(detected.waitingForGlass)
+    }
+
+    @Test
+    fun `an aborted wait for a glass is not still waiting`() {
+        val state = reducePour(PreparationState(), job(JobStatus.ABORTED).copy(waitingForGlass = true))
+        assertFalse(state.waitingForGlass)
+    }
+
+    @Test
+    fun `a measured pour step says it was measured`() {
+        val measured = job(JobStatus.RUNNING, stepIndex = 1).let { j ->
+            j.copy(steps = j.steps.map { if (it.kind == StepKind.POUR) it.copy(dispensedMl = 41.6, measured = true) else it })
+        }
+        val state = reducePour(PreparationState(), measured)
+        assertEquals("41 / 44 ml · measured", state.steps[1].detail)
+    }
 }

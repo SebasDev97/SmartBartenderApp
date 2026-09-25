@@ -56,6 +56,7 @@ fun SettingsScreen(
     onMachineEnabledChange: (Boolean) -> Unit,
     onConnect: () -> Unit,
     onTestConnection: () -> Unit,
+    onOpenCalibration: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
@@ -137,6 +138,7 @@ fun SettingsScreen(
         SectionHeader(title = "Machine", accent = accent)
         Spacer(Modifier.height(10.dp))
 
+        val snapshot = (state.connection as? ConnectionState.Connected)?.snapshot
         GlassPanel(modifier = Modifier.fillMaxWidth()) {
             Column {
                 InfoRow("Slots filled", "${state.loadedBottleCount} / ${state.totalBottleCount}")
@@ -144,15 +146,38 @@ fun SettingsScreen(
                 InfoRow("Recipe source", "TheCocktailDB")
                 Spacer(Modifier.height(12.dp))
                 InfoRow("Hardware link", state.hardwareLinkLabel)
+                if (snapshot != null) {
+                    Spacer(Modifier.height(12.dp))
+                    InfoRow(
+                        "Glass sensor",
+                        if (snapshot.sensorReferenceCm == null) "Not set up" else "Ready",
+                    )
+                }
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MetaChip(text = "Prototype build", accent = accent)
                     MetaChip(text = "De-Luxe edition", accent = TextSecondary)
                 }
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = onOpenCalibration,
+                    enabled = snapshot != null,
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("Calibrate pumps", fontWeight = FontWeight.Bold)
+                }
+                if (snapshot != null && snapshot.sensorReferenceCm == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "The machine won't pour until its glass sensor has measured the empty tray.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NeonAmber,
+                    )
+                }
             }
         }
 
-        val snapshot = (state.connection as? ConnectionState.Connected)?.snapshot
         if (snapshot == null || snapshot.isSimulated) {
             Spacer(Modifier.height(24.dp))
             Text(

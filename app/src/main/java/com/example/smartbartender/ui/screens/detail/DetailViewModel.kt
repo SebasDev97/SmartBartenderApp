@@ -49,6 +49,8 @@ data class PreparationState(
     /** Volume-weighted progress from the machine. Authoritative when present. */
     val remoteProgress: Float? = null,
     val errorMessage: String? = null,
+    /** The machine is waiting for a glass under the nozzle before anything pours. */
+    val waitingForGlass: Boolean = false,
 ) {
     val progress: Float
         get() = remoteProgress ?: when {

@@ -17,6 +17,9 @@ object Routes {
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{cocktailId}"
 
+    /** Tray reference, pump priming and calibration, pushed from Settings. */
+    const val CALIBRATION = "calibration"
+
     /** Create a custom drink, or edit one when `drinkId` is given. */
     const val CUSTOM_EDIT = "custom/edit?drinkId={drinkId}"
 

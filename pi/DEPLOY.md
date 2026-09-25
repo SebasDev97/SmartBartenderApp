@@ -12,9 +12,9 @@ is the day-to-day reference. This file is just the deployment walk-through.
 ## Step 0 — What you need
 
 - A Raspberry Pi on the same Wi-Fi as the phone, with SSH enabled.
-- An Arduino (Uno or Nano) and a USB cable to the Pi. The pumps' relays and the LED strip are
-  wired to the Arduino, not to the Pi — the Pi drives no pins at all.
-- The Arduino IDE on your computer, to flash the sketch once (step 6).
+- The Arduino with the group's relay/sensor/LCD sketch on it, and a USB cable to the Pi. The
+  pump relays, the ultrasonic sensor and the LCD are wired to the Arduino, not to the Pi — the
+  Pi drives no pins at all.
 - Python 3.9 or newer (`python3 --version`). Raspberry Pi OS Bookworm ships 3.11.
 - The Pi's IP address. Get it with `hostname -I` on the Pi.
 - The username you picked in Raspberry Pi Imager. Raspberry Pi OS has had no default `pi`
@@ -163,22 +163,14 @@ it disabled and keep starting the service by hand, or change `ExecStart` to use 
 
 ## Step 6 — Hardware: the Arduino
 
-The Pi never touches a pin. The relays and the LED strip are wired to the Arduino, and the Pi
-talks to it over the USB cable.
+The Pi never touches a pin. The relays, the ultrasonic sensor and the LCD are wired to the
+Arduino, which already runs the group's sketch; the Pi talks to it over the USB cable. There is
+nothing to flash from this repo.
 
-**Flash the sketch** (from your computer, once — and again whenever the wiring changes):
-
-1. Open `pi/firmware/bartender/bartender.ino` in the Arduino IDE.
-2. Install **Adafruit NeoPixel** from the Library Manager.
-3. Edit the block at the top to match your wiring: `PUMP_PINS` (pump 1 first), `LED_PIN`,
-   `LED_COUNT` (`0` if there is no strip) and `PUMP_ACTIVE_HIGH`. These are the only pin
-   numbers in the whole project.
-4. Upload it.
-
-Check it before involving the Pi: open the **Serial Monitor** at **9600 baud** with **Newline**
-line endings and type `HELLO`. You want `OK BARTENDER 1.0.0 4 24`. Then `ON 1` should run
-pump 1, `STOP` should stop it — and if you type `ON 1` and then nothing, the pump stops by
-itself after 1.5 seconds. That is the watchdog, and it is supposed to do that.
+Check the board before involving the service: open the Arduino IDE's **Serial Monitor** at
+**115200 baud** with **Newline** line endings. `GET DIST` should answer `DIST 16.3` or so,
+`RELAY 1 ON` should click pump 1's relay, and `ALL OFF` should release it. (Or run the group's
+own test menu script, which uses the same commands.)
 
 **Connect it to the Pi** and find its port:
 
@@ -199,41 +191,37 @@ groups                    # must include dialout, or the port cannot be opened
 If `dialout` is missing: `sudo usermod -aG dialout $USER`, then log out and back in.
 
 **Close the Arduino IDE's Serial Monitor** if it is open anywhere — only one program can hold
-the port. Then:
+the port. The same goes for the group's Python scripts: stop them before starting the service.
+Then:
 
 ```bash
 .venv/bin/python -m app.main --arduino --config config.yaml
 ```
 
-The log should say `Arduino on /dev/serial/by-id/...: firmware 1.0.0, 4 pumps, 24 LEDs` and
-the strip should start its spectrum.
+The log should say `Arduino on /dev/serial/by-id/...: answers; every relay is off`, and the
+LCD should read `Smart Bartender / Ready`.
 
-## Step 7 — Calibrate the pumps
+## Step 7 — Measure the tray, then calibrate the pumps
 
-**Do this before trusting a single drink.** `ml_per_s` in `config.yaml` is the only number
-that decides how much liquid ends up in the glass, and the value shipped in the example is a
-placeholder, not a measurement. Pumps of the same model differ from each other, and the same
-pump differs with a syrup versus a juice.
+**Do this before trusting a single drink.** In the app: **Settings → Calibrate pumps**.
 
-For each pump, with the bottle at the height it will actually sit and a measuring cup under
-the nozzle:
+1. **Measure reference.** Take every glass off the tray first. The machine measures the
+   distance to the empty tray; every glass is detected relative to it. Until this is done, the
+   machine refuses to pour (`NOT_CALIBRATED`).
+2. **Prime each pump.** Hold a cup under the nozzle and tap **Test 2 s** per pump until liquid
+   comes out steadily. A dry tube makes the first calibration far too low.
+3. **Calibrate.** Place the **empty 58 mm glass** under the nozzle and tap **Start**. Each pump
+   runs 3 seconds into it; the sensor measures the rise and the app shows ml/s per pump as it
+   goes. The results are saved to `~/pump_calibration.json` and used straight away — no restart.
 
-```bash
-curl -X POST http://localhost:8080/api/v1/pumps/1/jog \
-     -H 'Content-Type: application/json' -d '{"seconds": 10}'
-```
-
-Measure what came out, then:
-
-```
-ml_per_s = measured_ml / 10
-```
-
-Write it into `config.yaml` for that pump. Repeat for pumps 2, 3 and 4, then restart the
-service.
+If the group's calibration script already wrote `~/pump_calibration.json`, those rates are used
+from the start; recalibrate anyway once the tubes are primed (their pump 1 value was measured
+on a dry tube). The glass holds about four 3-second runs; if it gets too full the run stops
+with "Glass nearly full" and keeps the pumps it already measured — empty the glass and
+calibrate the rest.
 
 Expect ±15 % even after calibrating — peristaltic pumps are non-linear over short runs, which
-is exactly where a 15 ml pour lives.
+is exactly where a 15 ml pour lives. The measured volumes in the app show how close it gets.
 
 ---
 
@@ -272,23 +260,28 @@ If `readlink -f .venv/bin/python` shows a Mac path such as `/opt/homebrew/...`, 
 copied from your computer: `rm -rf .venv` and redo step 2 on the Pi.
 
 **Pumps run when idle, or don't run at all.**
-`PUMP_ACTIVE_HIGH` in the sketch is the wrong way round for your relay board. Flip it and
-re-flash (step 6).
+The relay polarity in the Arduino sketch is the wrong way round for the relay board. That is
+the sketch's business — check it with the Serial Monitor (step 6).
 
 **`cannot open /dev/...` at startup.**
 Wrong `arduino.port`, the cable is out, or the user is not in `dialout` (step 6).
 
-**`no answer from the bartender sketch`.**
-The port opened but nothing answered `HELLO`: the sketch isn't flashed, the baud rate in
-`config.yaml` doesn't match `BAUD` in the sketch, or the Serial Monitor still has the port.
+**`no answer from the Arduino`.**
+The port opened but nothing answered `ALL OFF`: the sketch isn't on the board, `arduino.baud`
+in `config.yaml` isn't 115200, or the Serial Monitor (or one of the group's scripts) still has
+the port.
 
-**The log says `watchdog: no command from the Pi`.**
-The Arduino stopped the pumps because the service went quiet for 1.5 seconds mid-pour —
-the service crashed, or the USB link dropped. Check `journalctl -u bartender` around that
-time.
+**The pour overlay says "Place a glass" and never moves on.**
+The sensor doesn't see an empty glass 0.5–5 cm above the tray reference. Re-measure the
+reference with the tray empty (step 7), make sure the glass is empty and centred under the
+sensor, and check the live reading on the calibration screen.
+
+**The app says the machine is "not calibrated".**
+The tray reference was never measured (step 7, part 1).
 
 **A pour is short or long.**
-Calibration (step 7). The service is doing exactly what `ml_per_s` told it to.
+Calibration (step 7). The measured ml in the app's pour overlay and Stats show what really
+went in.
 
 **Stopping service**
 Stop the service. `sudo systemctl stop bartender` kills every pump and shuts service down.

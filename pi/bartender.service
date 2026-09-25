@@ -19,6 +19,9 @@ Type=simple
 User=@USER@
 WorkingDirectory=@DIR@
 ExecStart=@DIR@/.venv/bin/python -m app.main --arduino --config config.yaml
+# The Arduino sketch has no watchdog: after any stop — a crash included — switch every relay
+# off from a fresh process. The leading '-' keeps a missing board from failing the unit.
+ExecStopPost=-@DIR@/.venv/bin/python -m app.safe_off --config config.yaml
 Restart=on-failure
 RestartSec=3
 

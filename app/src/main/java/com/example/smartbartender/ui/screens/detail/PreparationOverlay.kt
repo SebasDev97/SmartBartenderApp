@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.LocalBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -98,7 +98,13 @@ fun PreparationOverlay(
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            PourVisual(progress = progress, accent = accent, secondary = secondary, led = led)
+            PourVisual(
+                progress = progress,
+                accent = accent,
+                secondary = secondary,
+                led = led,
+                waitingForGlass = preparation.waitingForGlass,
+            )
 
             Spacer(Modifier.height(32.dp))
             Text(
@@ -109,16 +115,20 @@ fun PreparationOverlay(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (preparation.isFinished) {
-                    "$cocktailName is served. Enjoy."
-                } else {
-                    preparation.currentStep?.label.orEmpty()
+                text = when {
+                    preparation.isFinished -> "$cocktailName is served. Enjoy."
+                    preparation.waitingForGlass -> "Place a glass under the nozzle"
+                    else -> preparation.currentStep?.label.orEmpty()
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color = accent,
                 textAlign = TextAlign.Center,
             )
-            val detail = preparation.currentStep?.detail
+            val detail = if (preparation.waitingForGlass) {
+                "Pouring starts as soon as the machine sees an empty glass"
+            } else {
+                preparation.currentStep?.detail
+            }
             if (!preparation.isFinished && !detail.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -165,6 +175,7 @@ private fun PourVisual(
     accent: Color,
     secondary: Color,
     led: LedState,
+    waitingForGlass: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -203,6 +214,16 @@ private fun PourVisual(
                     .fillMaxHeight(progress.coerceIn(0.02f, 1f))
                     .background(Brush.verticalGradient(listOf(accent, secondary))),
             )
+            if (waitingForGlass) {
+                Icon(
+                    imageVector = Icons.Filled.LocalBar,
+                    contentDescription = "Waiting for a glass",
+                    tint = accent,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(56.dp),
+                )
+            }
         }
     }
 }

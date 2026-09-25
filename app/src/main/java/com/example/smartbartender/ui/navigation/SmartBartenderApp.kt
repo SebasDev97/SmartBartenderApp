@@ -53,6 +53,9 @@ import com.example.smartbartender.ui.screens.settings.SettingsScreen
 import com.example.smartbartender.ui.screens.settings.SettingsViewModel
 import com.example.smartbartender.ui.screens.stats.StatsScreen
 import com.example.smartbartender.ui.screens.stats.StatsViewModel
+import com.example.smartbartender.ui.screens.calibration.CalibrationActions
+import com.example.smartbartender.ui.screens.calibration.CalibrationScreen
+import com.example.smartbartender.ui.screens.calibration.CalibrationViewModel
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextPrimary
 
@@ -70,9 +73,12 @@ fun SmartBartenderApp() {
     val led = rememberLedState(enabled = settingsState.ledShowEnabled)
 
     val isTopLevel = TopLevelDestination.entries.any { it.route == currentRoute }
-    val isPushed = currentRoute == Routes.DETAIL || currentRoute == Routes.CUSTOM_EDIT
+    val isPushed = currentRoute == Routes.DETAIL || currentRoute == Routes.CUSTOM_EDIT ||
+        currentRoute == Routes.CALIBRATION
     val title = if (currentRoute == Routes.CUSTOM_EDIT) {
         if (backStackEntry?.arguments?.getString("drinkId") == null) "New drink" else "Edit drink"
+    } else if (currentRoute == Routes.CALIBRATION) {
+        "Calibrate pumps"
     } else TopLevelDestination.entries.firstOrNull { it.route == currentRoute }?.let {
         when (it) {
             TopLevelDestination.AVAILABLE -> "Smart Bartender"
@@ -211,6 +217,24 @@ fun SmartBartenderApp() {
                         onMachineEnabledChange = settingsViewModel::setMachineEnabled,
                         onConnect = settingsViewModel::connect,
                         onTestConnection = settingsViewModel::testConnection,
+                        onOpenCalibration = { navController.navigate(Routes.CALIBRATION) },
+                        contentPadding = innerPadding,
+                    )
+                }
+
+                composable(Routes.CALIBRATION) {
+                    val viewModel: CalibrationViewModel = viewModel(factory = CalibrationViewModel.Factory)
+                    val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    CalibrationScreen(
+                        state = state,
+                        led = led,
+                        actions = CalibrationActions(
+                            onMeasureReference = viewModel::measureReference,
+                            onTogglePump = viewModel::togglePump,
+                            onJog = viewModel::jog,
+                            onStart = viewModel::start,
+                            onAbort = viewModel::abort,
+                        ),
                         contentPadding = innerPadding,
                     )
                 }
