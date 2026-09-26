@@ -10,7 +10,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -34,11 +40,14 @@ fun ledColorAt(progress: Float): Color {
  * Drives the LED show simulation. Runs a single infinite transition regardless of [enabled]
  * so switching the show on and off never restructures the composition; when the show is off
  * the colour simply collapses to the machine's neutral cyan.
+ *
+ * Returns the same [LedState] every time. Nothing here reads the animation, so the caller
+ * does not recompose with it; see [LedState] for who does.
  */
 @Composable
 fun rememberLedState(enabled: Boolean, cycleMillis: Int = LedShow.CYCLE_MILLIS): LedState {
     val transition = rememberInfiniteTransition(label = "led")
-    val progress by transition.animateFloat(
+    val progress = transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -47,7 +56,7 @@ fun rememberLedState(enabled: Boolean, cycleMillis: Int = LedShow.CYCLE_MILLIS):
         ),
         label = "ledProgress",
     )
-    val pulse by transition.animateFloat(
+    val pulse = transition.animateFloat(
         initialValue = 0.35f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -56,30 +65,42 @@ fun rememberLedState(enabled: Boolean, cycleMillis: Int = LedShow.CYCLE_MILLIS):
         ),
         label = "ledPulse",
     )
-    return LedState(
-        enabled = enabled,
-        progress = progress,
-        primary = if (enabled) ledColorAt(progress) else NeonCyan,
-        secondary = if (enabled) ledColorAt((progress + 0.35f) % 1f) else SteelOutline,
-        intensity = if (enabled) pulse else 0f,
-    )
+    val enabledState = rememberUpdatedState(enabled)
+    return remember(enabledState, progress, pulse) { LedState(enabledState, progress, pulse) }
 }
 
-/** Snapshot of the simulated LED strip for one frame. */
-data class LedState(
-    val enabled: Boolean,
-    val progress: Float,
+/**
+ * The simulated LED strip, shared by every screen.
+ *
+ * Each value is read from the running animation when it is accessed, not copied into a new
+ * object every frame. So only code that reads a value follows the animation: a read inside a
+ * draw lambda (`drawBehind`) only redraws, a read during composition recomposes just that
+ * scope, and while the show is off nothing reads the clock at all.
+ */
+@Stable
+class LedState internal constructor(
+    enabledState: State<Boolean>,
+    private val progressState: State<Float>,
+    private val pulseState: State<Float>,
+) {
+    val enabled: Boolean by enabledState
+
+    /** 0f..1f through the colour cycle. Keeps moving while the show is off; nothing needs it then. */
+    val progress: Float get() = progressState.value
+
     /**
      * The accent every screen draws with: the strip's live hue, or the machine's neutral cyan
      * while the show is off — so callers never need to check [enabled] to pick a colour.
      */
-    val primary: Color,
-    val secondary: Color,
-    val intensity: Float,
-) {
+    val primary: Color get() = if (enabled) ledColorAt(progress) else NeonCyan
+
+    val secondary: Color get() = if (enabled) ledColorAt((progress + 0.35f) % 1f) else SteelOutline
+
+    val intensity: Float get() = if (enabled) pulseState.value else 0f
+
     companion object {
         /** The show switched off, frozen — for previews. */
-        val Off = LedState(enabled = false, progress = 0f, primary = NeonCyan, secondary = SteelOutline, intensity = 0f)
+        val Off = LedState(mutableStateOf(false), mutableFloatStateOf(0f), mutableFloatStateOf(0f))
     }
 }
 

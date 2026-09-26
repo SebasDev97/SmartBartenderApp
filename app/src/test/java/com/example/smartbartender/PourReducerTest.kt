@@ -2,6 +2,7 @@ package com.example.smartbartender
 
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
+import com.example.smartbartender.domain.model.MachineError
 import com.example.smartbartender.domain.model.MachineFault
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.StepKind
@@ -164,5 +165,36 @@ class PourReducerTest {
         val running = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1)))
         val stepless = pouring(reducePour(running, job(JobStatus.RUNNING, stepIndex = 1).copy(steps = emptyList())))
         assertEquals(running.steps, stepless.steps)
+    }
+
+    @Test
+    fun `a refused stop stays on screen while the job keeps running`() {
+        val refused = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1)))
+            .copy(stopFailed = MachineError.Unreachable)
+
+        val next = pouring(reducePour(refused, job(JobStatus.RUNNING, stepIndex = 1, progress = 0.6f)))
+
+        assertEquals(MachineError.Unreachable, next.stopFailed)
+    }
+
+    @Test
+    fun `a refused stop is dropped once the machine confirms a stop`() {
+        val refused = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1)))
+            .copy(stopFailed = MachineError.Unreachable)
+
+        val stopping = pouring(reducePour(refused, job(JobStatus.ABORTING, stepIndex = 1)))
+
+        assertNull(stopping.stopFailed)
+        assertTrue(stopping.aborting)
+    }
+
+    @Test
+    fun `a refused stop belongs to its own job`() {
+        val refused = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING)))
+            .copy(stopFailed = MachineError.Unreachable)
+
+        val other = pouring(reducePour(refused, job(JobStatus.RUNNING).copy(jobId = "job-2")))
+
+        assertNull(other.stopFailed)
     }
 }

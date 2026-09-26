@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -215,7 +216,7 @@ fun LibraryScreen(
                             if (state.customDrinks.isEmpty()) R.string.library_mine_empty_title else R.string.library_no_matches,
                         ),
                         message = if (state.customDrinks.isEmpty()) {
-                            stringResource(R.string.library_mine_empty_message, BottleCatalog.MAX_SLOTS)
+                            pluralStringResource(R.plurals.library_mine_empty_message, BottleCatalog.MAX_SLOTS, BottleCatalog.MAX_SLOTS)
                         } else {
                             stringResource(R.string.library_mine_no_match, state.query)
                         },

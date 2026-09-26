@@ -15,12 +15,13 @@ import com.example.smartbartender.ui.screens.machine.PumpRow
 import com.example.smartbartender.ui.screens.machine.PumpSelection
 import com.example.smartbartender.ui.screens.machine.pumpRows
 import com.example.smartbartender.ui.screens.machine.selectedPumpsOrAll
+import com.example.smartbartender.util.isObserved
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -69,7 +70,11 @@ class CalibrationViewModel(private val machine: BartenderMachine) : ViewModel() 
                 render(connection, deselected)
             }
         }
-        viewModelScope.launch { pollSensor() }
+        // Only while the screen is on show: a phone left on it in the background must not keep
+        // asking the Pi for readings.
+        viewModelScope.launch {
+            _uiState.isObserved().collectLatest { onShow -> if (onShow) pollSensor() }
+        }
     }
 
     fun togglePump(pump: Int) = selection.toggle(pump)
@@ -132,10 +137,11 @@ class CalibrationViewModel(private val machine: BartenderMachine) : ViewModel() 
 
     /**
      * A live reading once a second, so the user sees the glass being detected before they
-     * start. Paused while the machine is measuring for itself, to keep its timing clean.
+     * start. Paused while the machine is measuring for itself, to keep its timing clean, and
+     * stopped by cancellation when the screen goes out of view.
      */
     private suspend fun pollSensor() {
-        while (viewModelScope.isActive) {
+        while (true) {
             val state = _uiState.value
             if (state.connected && !state.isRunning && !state.isMeasuringReference) {
                 machine.readSensor().onSuccess { reading -> _uiState.update { it.copy(sensor = reading) } }

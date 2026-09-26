@@ -13,8 +13,11 @@ import com.example.smartbartender.domain.model.MachineError
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.toMachineError
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -47,6 +50,10 @@ class SettingsViewModel(
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState = _uiState.asStateFlow()
+
+    /** Just the LED switch, for the app root that drives the shared animation. */
+    val ledShowEnabled: StateFlow<Boolean> =
+        settings.ledShowEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState().ledShowEnabled)
 
     init {
         viewModelScope.launch {

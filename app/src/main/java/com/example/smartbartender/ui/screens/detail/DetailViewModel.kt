@@ -26,6 +26,7 @@ import com.example.smartbartender.domain.model.toMachineError
 import com.example.smartbartender.ui.common.LoadError
 import com.example.smartbartender.ui.common.toLoadError
 import com.example.smartbartender.ui.navigation.DetailRoute
+import com.example.smartbartender.util.runCatchingCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,8 +60,8 @@ data class DetailUiState(
  *
  * The machine is the source of truth once a pour starts: this class posts a plan, then does
  * nothing but render the events that come back. Walking away from the screen mid-pour is
- * therefore harmless — the drink is still being made, and [reattach] picks the overlay back
- * up where it left off.
+ * therefore harmless — the drink is still being made, and [attachToRunningPour] picks the
+ * overlay back up where it left off.
  */
 class DetailViewModel(
     private val repository: CocktailRepository,
@@ -77,6 +78,7 @@ class DetailViewModel(
 
     private var followJob: Job? = null
     private var loadJob: Job? = null
+    private var attachJob: Job? = null
 
     init {
         loadCocktail()
@@ -94,11 +96,11 @@ class DetailViewModel(
         }
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, loadError = null) }
-            runCatching { repository.cocktailById(cocktailId) }
+            runCatchingCancellable { repository.cocktailById(cocktailId) }
                 .onSuccess { cocktail ->
                     _uiState.update { it.copy(isLoading = false, cocktail = cocktail) }
                     showPlanPreview(rack.slots.first())
-                    reattach()
+                    attachToRunningPour()
                 }
                 .onFailure { throwable ->
                     _uiState.update { it.copy(isLoading = false, loadError = throwable.toLoadError()) }
@@ -111,7 +113,6 @@ class DetailViewModel(
      * once, so coming back from the editor shows the change straight away.
      */
     private fun observeCustomDrink(): Job = viewModelScope.launch {
-        var reattached = false
         customDrinks.customDrinks
             .map { drinks -> drinks.firstOrNull { it.id == cocktailId } }
             .distinctUntilChanged()
@@ -122,10 +123,7 @@ class DetailViewModel(
                 }
                 _uiState.update { it.copy(isLoading = false, cocktail = drink.toCocktail(), loadError = null) }
                 showPlanPreview(rack.slots.first())
-                if (!reattached) {
-                    reattached = true
-                    reattach()
-                }
+                attachToRunningPour()
             }
     }
 
@@ -157,16 +155,25 @@ class DetailViewModel(
      * Picks a pour back up after the screen — or the whole app — went away.
      *
      * The machine kept pouring regardless, so the honest thing is to show where it actually
-     * got to rather than start from zero or pretend nothing happened.
+     * got to rather than start from zero or pretend nothing happened. It watches rather than
+     * checks once: after a process restart the recipe can load before the machine's first
+     * snapshot, and the pour that snapshot reports must still be shown. Only a pour this phone
+     * started, for this drink, and only while the screen shows none.
      */
-    private suspend fun reattach() {
-        val activeJobId = activeJob.activeJobId.first() ?: return
-        val job = machine.currentJob.value ?: return
-        if (job.jobId != activeJobId || !job.status.isLive) return
-        if (job.drinkId != null && job.drinkId != cocktailId) return
-
-        _uiState.update { it.copy(pour = reducePour(it.pour, job)) }
-        follow(job.jobId)
+    private fun attachToRunningPour() {
+        if (attachJob != null) return
+        attachJob = viewModelScope.launch {
+            combine(machine.currentJob, activeJob.activeJobId) { job, activeJobId ->
+                job?.takeIf { it.jobId == activeJobId && it.status.isLive }
+                    ?.takeIf { it.drinkId == null || it.drinkId == cocktailId }
+            }
+                .filterNotNull()
+                .collect { job ->
+                    if (_uiState.value.pour != PourPhase.Idle) return@collect
+                    _uiState.update { it.copy(pour = reducePour(it.pour, job)) }
+                    follow(job.jobId)
+                }
+        }
     }
 
     /** What the machine would be asked to do by hand or guess at, shown before pouring. */
@@ -183,6 +190,12 @@ class DetailViewModel(
         val cocktail = _uiState.value.cocktail ?: return
         if (_uiState.value.pour is PourPhase.Pouring) return
 
+        // The app mints the job id, so retrying a request the machine already received
+        // returns the running job instead of pouring a second drink. The pour shows before
+        // the plan is built, so a second tap meanwhile finds it and does nothing.
+        val jobId = UUID.randomUUID().toString()
+        _uiState.update { it.copy(pour = PourPhase.Pouring.starting(jobId)) }
+
         viewModelScope.launch {
             val plan = plan(cocktail)
             if (!plan.isPourable) {
@@ -190,10 +203,6 @@ class DetailViewModel(
                 return@launch
             }
 
-            // The app mints the job id, so retrying a request the machine already received
-            // returns the running job instead of pouring a second drink.
-            val jobId = UUID.randomUUID().toString()
-            _uiState.update { it.copy(pour = PourPhase.Pouring.starting(jobId)) }
             activeJob.setActiveJobId(jobId)
 
             machine.startPour(plan.toRequest(jobId))
@@ -225,22 +234,25 @@ class DetailViewModel(
         val pouring = _uiState.value.pour as? PourPhase.Pouring ?: return
         // Don't reset locally — the machine reports `aborting` and then `aborted`, and the
         // overlay should show that rather than pretending the pumps stopped instantly.
-        _uiState.update { it.copy(pour = pouring.copy(aborting = true)) }
+        _uiState.update { it.copy(pour = pouring.copy(aborting = true, stopFailed = null)) }
         viewModelScope.launch {
-            machine.abort(pouring.jobId).onFailure { resetPreparation() }
+            machine.abort(pouring.jobId).onFailure { throwable ->
+                // The pumps may still be running: keep the pour on screen, with Stop back.
+                _uiState.update { state ->
+                    val current = state.pour as? PourPhase.Pouring
+                    if (current == null || current.jobId != pouring.jobId) return@update state
+                    state.copy(pour = current.copy(aborting = false, stopFailed = throwable.toMachineError()))
+                }
+            }
         }
     }
 
     /** Dismisses a finished or failed pour and returns the screen to idle. */
     fun acknowledgePreparation() {
-        resetPreparation()
-        viewModelScope.launch { activeJob.setActiveJobId(null) }
-    }
-
-    private fun resetPreparation() {
         followJob?.cancel()
         followJob = null
         _uiState.update { it.copy(pour = PourPhase.Idle) }
+        viewModelScope.launch { activeJob.setActiveJobId(null) }
     }
 
     companion object {

@@ -11,7 +11,6 @@ import com.example.smartbartender.data.hardware.dto.SlotsRequestDto
 import com.example.smartbartender.data.hardware.dto.toDto
 import com.example.smartbartender.data.hardware.dto.wireName
 import com.example.smartbartender.data.local.MachineSettingsStore
-import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.ConnectionState
@@ -24,6 +23,7 @@ import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
 import com.example.smartbartender.domain.model.SensorReading
+import com.example.smartbartender.util.runCatchingCancellable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -61,7 +61,6 @@ private val RECONNECT_BACKOFF = listOf(1, 2, 4, 8, 15)
 class HttpBartenderMachine(
     private val api: BartenderApi,
     private val client: OkHttpClient,
-    private val rack: RackStore,
     private val settings: MachineSettingsStore,
     private val scope: CoroutineScope,
 ) : BartenderMachine {
@@ -86,14 +85,18 @@ class HttpBartenderMachine(
                     _currentJob.value = null
                     emptyFlow()
                 } else {
+                    // Failures since the last good connection. `retryWhen`'s own attempt count
+                    // never resets, which would leave every later outage on the longest wait.
+                    var failures = 0
                     client.machineEvents(target.wsUrl, MachineNetworkModule.json)
                         .onStart {
                             _connection.value = ConnectionState.Connecting
                             Log.i(TAG, "connecting to ${target.httpBase}")
                         }
-                        .retryWhen { cause, attempt ->
+                        .onEach { event -> if (event is MachineEvent.Snapshot) failures = 0 }
+                        .retryWhen { cause, _ ->
                             _connection.value = ConnectionState.Failed(cause.asMachineError())
-                            val wait = RECONNECT_BACKOFF[minOf(attempt.toInt(), RECONNECT_BACKOFF.lastIndex)]
+                            val wait = RECONNECT_BACKOFF[minOf(failures++, RECONNECT_BACKOFF.lastIndex)]
                             delay(wait.seconds)
                             true
                         }
@@ -118,8 +121,8 @@ class HttpBartenderMachine(
                 _connection.value = ConnectionState.Connected(event.snapshot.keepingEndedRuns(previous))
                 _currentJob.value = event.snapshot.currentJob ?: _currentJob.value
                 // A reconnect means the machine may have rebooted, or been changed by another
-                // phone. Push what this app believes so the two converge.
-                if (firstConnect) scope.launch { resync() }
+                // phone. Its pump map is RackSync's to restore; the LED show is restored here.
+                if (firstConnect) scope.launch { restoreLedShow() }
             }
 
             is MachineEvent.Pour -> _currentJob.value = event.job
@@ -157,11 +160,9 @@ class HttpBartenderMachine(
         }
     }
 
-    private suspend fun resync() {
-        runCatching {
-            pushSlots(rack.slots.first())
-            setLed(settings.ledShowEnabled.first())
-        }.onFailure { Log.w(TAG, "could not resync the machine: ${it.message}") }
+    private suspend fun restoreLedShow() {
+        setLed(settings.ledShowEnabled.first())
+            .onFailure { Log.w(TAG, "could not restore the LED show: ${it.message}") }
     }
 
     // ------------------------------------------------------------------ commands
@@ -255,9 +256,13 @@ class HttpBartenderMachine(
     }
 }
 
-/** Runs [block], turning whatever it throws into a [MachineException] with a typed reason. */
+/**
+ * Runs [block], turning whatever it throws into a [MachineException] with a typed reason.
+ * Cancellation is not a machine error: it propagates, so a caller that went away is never
+ * handed a failure to act on.
+ */
 private inline fun <T> runMachineCall(block: () -> T): Result<T> =
-    runCatching(block).recoverCatching { throw MachineException(it.asMachineError(), it) }
+    runCatchingCancellable(block).recoverCatching { throw MachineException(it.asMachineError(), it) }
 
 private fun Throwable.asMachineError(): MachineError = when (this) {
     is MachineException -> error

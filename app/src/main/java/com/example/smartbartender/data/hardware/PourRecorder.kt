@@ -3,9 +3,9 @@ package com.example.smartbartender.data.hardware
 import com.example.smartbartender.data.local.ActiveJobStore
 import com.example.smartbartender.data.local.PourHistoryStore
 import com.example.smartbartender.data.local.RackStore
-import com.example.smartbartender.domain.model.MachineSlot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRecord
+import com.example.smartbartender.domain.model.inPumpOrder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -64,7 +64,3 @@ class PourRecorder(
         PourRecord.from(job, slots, clock())?.let { history.recordPour(it) }
     }
 }
-
-/** The machine's slot table as a positional list: index 0 is pump 1. */
-private fun List<MachineSlot>.inPumpOrder(): List<String?> =
-    (1..maxOf { it.pump }).map { pump -> firstOrNull { it.pump == pump }?.bottleId }

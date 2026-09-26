@@ -10,6 +10,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 /** End-to-end check of the availability engine against a stubbed CocktailDB. */
 class AvailabilityTest {
@@ -66,6 +68,26 @@ class AvailabilityTest {
 
     private fun repository() =
         CocktailRepository(FakeApi(listOf(margarita, mojito, negroni, absintheDrink, highball)))
+
+    /**
+     * The same book, except that some first-letter pages fail until [recover] is called. The
+     * repository fetches pages in parallel on `Dispatchers.Default`, hence the atomic count.
+     */
+    private class FlakyApi(
+        private val book: FakeApi,
+        @Volatile private var failing: Set<String>,
+    ) : CocktailApi by book {
+        private val requests = AtomicInteger()
+        val pageRequests: Int get() = requests.get()
+
+        fun recover() { failing = emptySet() }
+
+        override suspend fun searchByFirstLetter(letter: String): CocktailResponse {
+            requests.incrementAndGet()
+            if (letter in failing) throw IOException("page $letter timed out")
+            return book.searchByFirstLetter(letter)
+        }
+    }
 
     @Test
     fun `a fully covered recipe can be made now`() = runTest {
@@ -136,5 +158,34 @@ class AvailabilityTest {
     fun `no bottles loaded yields nothing pourable`() = runTest {
         val result = repository().findMakeable(emptyList())
         assertTrue(result.canMakeNow.isEmpty())
+    }
+
+    @Test
+    fun `pages that failed are fetched again rather than cached as missing`() = runTest {
+        val api = FlakyApi(FakeApi(listOf(margarita, negroni)), failing = setOf("n"))
+        val repository = CocktailRepository(api)
+        val bottles = listOf("gin", "campari", "sweet_vermouth").mapNotNull(BottleCatalog::byId)
+
+        assertTrue(repository.findMakeable(bottles).canMakeNow.none { it.cocktail.name == "Negroni" })
+
+        api.recover()
+        assertTrue(repository.findMakeable(bottles).canMakeNow.any { it.cocktail.name == "Negroni" })
+        assertEquals(listOf("Margarita", "Negroni"), repository.browse().map { it.name })
+    }
+
+    @Test
+    fun `only the failed pages are fetched again, and a complete book never`() = runTest {
+        val api = FlakyApi(FakeApi(listOf(margarita, negroni)), failing = setOf("n"))
+        val repository = CocktailRepository(api)
+
+        repository.browse()
+        assertEquals(26, api.pageRequests)
+
+        api.recover()
+        repository.browse()
+        assertEquals(27, api.pageRequests)
+
+        repository.browse()
+        assertEquals(27, api.pageRequests)
     }
 }

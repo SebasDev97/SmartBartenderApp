@@ -43,7 +43,6 @@ class AppContainer(context: Context) {
             HttpBartenderMachine(
                 api = MachineNetworkModule.createApi(client),
                 client = client,
-                rack = rack,
                 settings = machineSettings,
                 scope = appScope,
             )

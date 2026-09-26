@@ -31,6 +31,9 @@ enum class LibraryFilter { ALL, FAVOURITES, MINE }
 /** Something the Library asks its host to do once, rather than a state to render. */
 sealed interface LibraryEvent {
     data class OpenCocktail(val id: String) : LibraryEvent
+
+    /** Surprise me could not pick a drink. Said once, without touching the list on screen. */
+    data object SurpriseFailed : LibraryEvent
 }
 
 data class LibraryUiState(
@@ -127,9 +130,9 @@ class LibraryViewModel(
     /** Picks a random drink and asks the host to open it. */
     fun surpriseMe() {
         viewModelScope.launch {
-            runCatching { repository.randomCocktail() }
+            runCatchingCancellable { repository.randomCocktail() }
                 .onSuccess { _events.send(LibraryEvent.OpenCocktail(it.id)) }
-                .onFailure { throwable -> _uiState.update { it.copy(loadError = throwable.toLoadError()) } }
+                .onFailure { _events.send(LibraryEvent.SurpriseFailed) }
         }
     }
 

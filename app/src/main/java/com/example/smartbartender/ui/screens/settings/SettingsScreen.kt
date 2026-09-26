@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -348,7 +349,7 @@ private fun machineSummary(connection: ConnectionState): String = when (connecti
     ConnectionState.Connecting -> stringResource(R.string.settings_connecting)
     is ConnectionState.Failed -> connection.error.text()
     is ConnectionState.Connected -> with(connection.snapshot) {
-        stringResource(R.string.settings_machine_summary, name, backend.label(), pumpCount)
+        pluralStringResource(R.plurals.settings_machine_summary, pumpCount, name, backend.label(), pumpCount)
     }
 }
 

@@ -23,6 +23,8 @@ sealed interface PourPhase {
         val waitingForGlass: Boolean,
         /** The user asked to stop, and the pumps have not confirmed it yet. */
         val aborting: Boolean = false,
+        /** Why the last Stop did not reach the machine. The pumps may still be running. */
+        val stopFailed: MachineError? = null,
     ) : PourPhase {
         val currentStep: PourStep? get() = steps.getOrNull(currentStepIndex)
 

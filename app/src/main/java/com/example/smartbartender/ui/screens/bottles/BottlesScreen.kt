@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,7 +88,7 @@ fun BottlesScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = stringResource(R.string.bottles_summary, BottleCatalog.MAX_SLOTS, state.loadedCount),
+                    text = pluralStringResource(R.plurals.bottles_summary, BottleCatalog.MAX_SLOTS, BottleCatalog.MAX_SLOTS, state.loadedCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
@@ -101,7 +102,7 @@ fun BottlesScreen(
                     exit = fadeOut() + shrinkVertically(),
                 ) {
                     Text(
-                        text = stringResource(R.string.bottles_rack_full_notice, BottleCatalog.MAX_SLOTS),
+                        text = pluralStringResource(R.plurals.bottles_rack_full_notice, BottleCatalog.MAX_SLOTS, BottleCatalog.MAX_SLOTS),
                         style = MaterialTheme.typography.labelLarge,
                         color = NeonAmber,
                         modifier = Modifier.padding(top = 12.dp),

@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -496,7 +497,7 @@ private fun BottlePickerSheet(
 private fun DrinkProblem.text(): String = when (this) {
     DrinkProblem.NoName -> stringResource(R.string.problem_no_name)
     DrinkProblem.NoItems -> stringResource(R.string.problem_no_items)
-    is DrinkProblem.TooManyItems -> stringResource(R.string.problem_too_many_items, maxItems)
+    is DrinkProblem.TooManyItems -> pluralStringResource(R.plurals.problem_too_many_items, maxItems, maxItems)
     DrinkProblem.BottleMissing -> stringResource(R.string.problem_bottle_missing)
     DrinkProblem.BottleRepeated -> stringResource(R.string.problem_bottle_repeated)
     is DrinkProblem.VolumeOutOfRange -> stringResource(R.string.problem_volume_range, minMl, maxMl)

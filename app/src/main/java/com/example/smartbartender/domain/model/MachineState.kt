@@ -54,6 +54,10 @@ data class MachineSlot(
     val mlPerSecond: Double,
 )
 
+/** The machine's slot table as a positional list, like the phone's rack: index 0 is pump 1. */
+fun List<MachineSlot>.inPumpOrder(): List<String?> =
+    (1..(maxOfOrNull { it.pump } ?: 0)).map { pump -> firstOrNull { it.pump == pump }?.bottleId }
+
 data class LedShow(
     val enabled: Boolean,
     val mode: LedMode,

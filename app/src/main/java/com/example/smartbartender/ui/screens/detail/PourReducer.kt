@@ -14,7 +14,8 @@ import com.example.smartbartender.domain.model.StepKind
  */
 fun reducePour(previous: PourPhase, job: PourJob): PourPhase = when (job.status) {
     JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.ABORTING -> {
-        val steps = job.steps.map(::toPourStep).ifEmpty { (previous as? PourPhase.Pouring)?.steps.orEmpty() }
+        val sameJob = (previous as? PourPhase.Pouring)?.takeIf { it.jobId == job.jobId }
+        val steps = job.steps.map(::toPourStep).ifEmpty { sameJob?.steps.orEmpty() }
         PourPhase.Pouring(
             jobId = job.jobId,
             steps = steps,
@@ -22,6 +23,8 @@ fun reducePour(previous: PourPhase, job: PourJob): PourPhase = when (job.status)
             machineProgress = job.progress,
             waitingForGlass = job.waitingForGlass,
             aborting = job.status == JobStatus.ABORTING,
+            // A refused Stop stays on screen until the machine confirms a stop after all.
+            stopFailed = sameJob?.stopFailed?.takeIf { job.status != JobStatus.ABORTING },
         )
     }
 

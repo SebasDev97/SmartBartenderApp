@@ -98,7 +98,9 @@ only an all-pages failure throws.
 
 `lastAvailability` is keyed on the loaded-bottle id set, so a rack change recomputes it on its
 own. Telling the *machine* about a rack change is `data/hardware/RackSync.kt`'s job: it watches
-`RackStore.slots` app-wide, so a new way to change the rack needs no extra call.
+`RackStore.slots` app-wide against the map the machine reports, and pushes whenever the two
+differ and the machine is idle — so a new way to change the rack needs no extra call, and a
+rack changed mid-pour or offline still arrives.
 
 ### Ingredient matching (`domain/model/BottleCatalog.kt`)
 
@@ -188,6 +190,9 @@ ambient glow and pour animation in step. The infinite transition runs regardless
 is enabled (so toggling never restructures the composition); when off, colours collapse to
 neutral cyan, so `led.primary` is always the accent to draw with — no need to check
 `led.enabled` first. Don't call `rememberLedState` inside a screen; previews use `LedState.Off`.
+`LedState` is one stable object whose values are read from the animation when accessed, so only
+code that reads them follows the clock: prefer reading them inside draw lambdas (`drawBehind`),
+where a new frame only redraws, over reading them during composition, which recomposes.
 
 ### Theme
 
@@ -203,9 +208,15 @@ pattern to copy. They cover ingredient normalisation and alias resolution, the 1
 ingredient/measure pairing, both miss-response shapes, the four-slot clamp,
 can-make/almost/not-shown classification, measure parsing, pour planning, slot ordering,
 favourites storage and search, pour history and statistics, the pour recorder, the pour reducer,
-and the machine contract through a `FakeMachine` and fakes of the stores. The stores are
+the detail screen's pour (`DetailViewModelTest`), the rack sync, load-error wording, the
+screens that pause while out of view, and the machine contract through a `FakeMachine` and fakes of the stores. The stores are
 interfaces for that last reason, and small ones, so a fake implements only what its subject
 reads.
+
+ViewModel tests swap `Dispatchers.Main` for a `StandardTestDispatcher`, which shares `runTest`'s
+virtual clock — and `runTest` returns only once that clock has nothing left to run. A ViewModel
+that loops (the calibration sensor poll) must have its `viewModelScope` cancelled before the test
+body ends, or the whole Gradle run hangs; see `closedAfter` in `ScreenVisibilityTest`.
 
 When touching the availability engine or the catalog, extend `AvailabilityTest` with a fake
 `CocktailApi` rather than hitting the network. When touching the pour, extend `PourReducerTest`

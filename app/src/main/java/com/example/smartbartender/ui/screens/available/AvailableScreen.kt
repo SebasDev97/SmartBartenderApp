@@ -56,7 +56,7 @@ fun AvailableScreen(
             !state.hasBottles -> EmptyState(
                 icon = Icons.Outlined.Liquor,
                 title = stringResource(R.string.available_no_bottles_title),
-                message = stringResource(R.string.available_no_bottles_message, BottleCatalog.MAX_SLOTS),
+                message = pluralStringResource(R.plurals.available_no_bottles_message, BottleCatalog.MAX_SLOTS, BottleCatalog.MAX_SLOTS),
                 actionLabel = stringResource(R.string.available_load_bottles),
                 onAction = onOpenBottles,
                 modifier = Modifier.padding(contentPadding),
@@ -75,7 +75,7 @@ fun AvailableScreen(
             state.isEmptyResult -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
                 title = stringResource(R.string.available_nothing_title),
-                message = stringResource(R.string.available_nothing_message, BottleCatalog.MAX_SLOTS),
+                message = pluralStringResource(R.plurals.available_nothing_message, BottleCatalog.MAX_SLOTS, BottleCatalog.MAX_SLOTS),
                 actionLabel = stringResource(R.string.available_adjust_bottles),
                 onAction = onOpenBottles,
                 accent = NeonAmber,
@@ -160,7 +160,7 @@ private fun ReadyHeadline(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = stringResource(R.string.slots_filled, bottleCount, BottleCatalog.MAX_SLOTS),
+            text = pluralStringResource(R.plurals.slots_filled, BottleCatalog.MAX_SLOTS, bottleCount, BottleCatalog.MAX_SLOTS),
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
         )

@@ -135,7 +135,16 @@ fun PreparationOverlay(
                 textAlign = TextAlign.Center,
             )
             val detail = (pour as? PourPhase.Pouring)?.let { detail(it) }
-            if (!detail.isNullOrBlank()) {
+            val stopFailed = (pour as? PourPhase.Pouring)?.stopFailed
+            if (stopFailed != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.pour_stop_failed, stopFailed.text()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ErrorRed,
+                    textAlign = TextAlign.Center,
+                )
+            } else if (!detail.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = detail,

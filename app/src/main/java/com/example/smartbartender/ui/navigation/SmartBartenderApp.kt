@@ -15,11 +15,15 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -68,6 +72,7 @@ import com.example.smartbartender.ui.screens.stats.StatsScreen
 import com.example.smartbartender.ui.screens.stats.StatsViewModel
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextPrimary
+import kotlinx.coroutines.launch
 
 /** Root composable: bottom navigation over the top-level tabs, with pushed screens on top. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,17 +82,21 @@ fun SmartBartenderApp() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
 
-    // The LED show state lives at the root so every screen shares one animation clock.
+    // The LED show state lives at the root so every screen shares one animation clock. The
+    // root reads only the one switch it needs, so typing in Settings does not recompose it.
     val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
-    val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
-    val led = rememberLedState(enabled = settingsState.ledShowEnabled)
+    val ledShowEnabled by settingsViewModel.ledShowEnabled.collectAsStateWithLifecycle()
+    val led = rememberLedState(enabled = ledShowEnabled)
 
     val isTopLevel = destination?.isTopLevel() == true
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LedAmbience(led = led, modifier = Modifier.fillMaxSize()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = {
@@ -148,9 +157,11 @@ fun SmartBartenderApp() {
                 composable<LibraryRoute> {
                     val viewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    val surpriseFailed = stringResource(R.string.surprise_failed)
                     ObserveAsEvents(viewModel.events) { event ->
                         when (event) {
                             is LibraryEvent.OpenCocktail -> navController.navigate(DetailRoute(event.id))
+                            LibraryEvent.SurpriseFailed -> scope.launch { snackbarHostState.showSnackbar(surpriseFailed) }
                         }
                     }
                     LibraryScreen(
@@ -197,8 +208,9 @@ fun SmartBartenderApp() {
                 }
 
                 composable<SettingsRoute> {
+                    val state by settingsViewModel.uiState.collectAsStateWithLifecycle()
                     SettingsScreen(
-                        state = settingsState,
+                        state = state,
                         led = led,
                         onLedShowChange = settingsViewModel::setLedShowEnabled,
                         onMachineHostChange = settingsViewModel::setMachineHost,

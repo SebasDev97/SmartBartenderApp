@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Smart Bartender</string>
 
     <!-- Shared -->
@@ -9,6 +9,8 @@
     <string name="error_offline">No internet connection. Check your network and try again.</string>
     <string name="error_recipes_timeout">TheCocktailDB took too long to answer.</string>
     <string name="error_recipes_generic">Something went wrong while loading recipes.</string>
+    <string name="error_recipe_not_found">TheCocktailDB doesn\'t have this drink any more.</string>
+    <string name="error_recipes_unreachable">Couldn\'t reach TheCocktailDB. Check your connection and try again.</string>
     <string name="error_drink_deleted">This drink was deleted.</string>
     <string name="favourite_add">Add to favourites</string>
     <string name="favourite_remove">Remove from favourites</string>
@@ -67,15 +69,22 @@
     <string name="pour_percent">%1$d%%</string>
     <string name="pour_abort">Abort pour</string>
     <string name="pour_stopping">Stopping…</string>
+    <string name="pour_stop_failed">Could not stop the pour: %1$s. The pumps may still be running.</string>
     <string name="pour_take_glass">Take glass</string>
     <string name="pour_dismiss">OK</string>
 
     <!-- Available -->
     <string name="available_no_bottles_title">No bottles loaded</string>
-    <string name="available_no_bottles_message">Load up to %1$d bottles into the rack and the machine will work out what it can pour.</string>
+    <plurals name="available_no_bottles_message">
+        <item quantity="one">Load up to %1$d bottle into the rack and the machine will work out what it can pour.</item>
+        <item quantity="other">Load up to %1$d bottles into the rack and the machine will work out what it can pour.</item>
+    </plurals>
     <string name="available_load_bottles">Load bottles</string>
     <string name="available_nothing_title">Nothing pourable yet</string>
-    <string name="available_nothing_message">None of the recipes match the bottles in the rack. With only %1$d slots, a mixer or a citrus juice opens up the most drinks.</string>
+    <plurals name="available_nothing_message">
+        <item quantity="one">None of the recipes match the bottles in the rack. With only %1$d slot, a mixer or a citrus juice opens up the most drinks.</item>
+        <item quantity="other">None of the recipes match the bottles in the rack. With only %1$d slots, a mixer or a citrus juice opens up the most drinks.</item>
+    </plurals>
     <string name="available_adjust_bottles">Adjust bottles</string>
     <string name="available_can_make_now">Can make now</string>
     <string name="available_one_bottle_away">One bottle away</string>
@@ -83,7 +92,10 @@
         <item quantity="one">cocktail ready to pour</item>
         <item quantity="other">cocktails ready to pour</item>
     </plurals>
-    <string name="slots_filled">%1$d of %2$d slots filled</string>
+    <plurals name="slots_filled">
+        <item quantity="one">%1$d of %2$d slot filled</item>
+        <item quantity="other">%1$d of %2$d slots filled</item>
+    </plurals>
 
     <!-- Library -->
     <string name="library_search_all">Search cocktails</string>
@@ -91,13 +103,17 @@
     <string name="library_search_mine">Search my drinks</string>
     <string name="library_clear_search">Clear search</string>
     <string name="library_surprise_me">Surprise me with a random cocktail</string>
+    <string name="surprise_failed">Couldn\'t pick a drink just now. Try again in a moment.</string>
     <string name="library_filter_all">All</string>
     <string name="library_filter_favourites">Favourites</string>
     <string name="library_filter_mine">My drinks</string>
     <string name="library_filter_counted">%1$s (%2$d)</string>
     <string name="library_no_matches">No matches</string>
     <string name="library_mine_empty_title">No drinks of your own yet</string>
-    <string name="library_mine_empty_message">Pick up to %1$d bottles, set the millilitres, and the machine pours it your way.</string>
+    <plurals name="library_mine_empty_message">
+        <item quantity="one">Pick up to %1$d bottle, set the millilitres, and the machine pours it your way.</item>
+        <item quantity="other">Pick up to %1$d bottles, set the millilitres, and the machine pours it your way.</item>
+    </plurals>
     <string name="library_mine_no_match">None of your drinks is called \"%1$s\".</string>
     <string name="library_create_drink">Create a drink</string>
     <string name="library_new_drink">New drink</string>
@@ -110,8 +126,14 @@
 
     <!-- Bottles -->
     <string name="bottles_title">Bottle rack</string>
-    <string name="bottles_summary">The machine holds %1$d bottles at a time — %2$d of %1$d slots filled.</string>
-    <string name="bottles_rack_full_notice">All %1$d slots are full — eject a bottle first.</string>
+    <plurals name="bottles_summary">
+        <item quantity="one">The machine holds %1$d bottle at a time — %2$d of %1$d slot filled.</item>
+        <item quantity="other">The machine holds %1$d bottles at a time — %2$d of %1$d slots filled.</item>
+    </plurals>
+    <plurals name="bottles_rack_full_notice">
+        <item quantity="one">The only slot is full — eject the bottle first.</item>
+        <item quantity="other">All %1$d slots are full — eject a bottle first.</item>
+    </plurals>
     <string name="bottles_load_starter">Load starter rack</string>
     <string name="bottles_eject_all">Eject all</string>
     <string name="bottles_slot">SLOT %1$d</string>
@@ -151,7 +173,10 @@
     <string name="settings_testing">Testing…</string>
     <string name="settings_not_connected">Not connected</string>
     <string name="settings_connecting">Connecting…</string>
-    <string name="settings_machine_summary">%1$s · %2$s · %3$d pumps</string>
+    <plurals name="settings_machine_summary">
+        <item quantity="one">%1$s · %2$s · %3$d pump</item>
+        <item quantity="other">%1$s · %2$s · %3$d pumps</item>
+    </plurals>
     <string name="settings_link_simulated">Simulated machine</string>
     <string name="settings_link_live">Live</string>
     <string name="settings_test_found">Found %1$s (%2$s, firmware %3$s)</string>
@@ -172,7 +197,8 @@
     <string name="stats_cocktails_made">Cocktails made</string>
     <string name="stats_poured_total">Poured in total</string>
     <string name="stats_recipes_tried">Recipes tried</string>
-    <string name="stats_this_week">This week · %1$d this month</string>
+    <!-- "%1$d this month" counts drinks without naming them, so there is no noun to inflect. -->
+    <string name="stats_this_week" tools:ignore="PluralsCandidate">This week · %1$d this month</string>
     <string name="stats_times">×%1$d</string>
     <string name="stats_happy_hour">Happy hour</string>
     <string name="stats_hour">%1$02d:00</string>
@@ -309,7 +335,10 @@
     <string name="unit_ml">ml</string>
     <string name="problem_no_name">Give the drink a name</string>
     <string name="problem_no_items">Add at least one ingredient</string>
-    <string name="problem_too_many_items">The machine has only %1$d slots</string>
+    <plurals name="problem_too_many_items">
+        <item quantity="one">The machine has only %1$d slot</item>
+        <item quantity="other">The machine has only %1$d slots</item>
+    </plurals>
     <string name="problem_bottle_missing">Pick a bottle for every ingredient</string>
     <string name="problem_bottle_repeated">Each bottle can be used only once</string>
     <string name="problem_volume_range">Each ingredient must be %1$d–%2$d ml</string>

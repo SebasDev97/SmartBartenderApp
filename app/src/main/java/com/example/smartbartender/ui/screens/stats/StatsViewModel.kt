@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.smartbartender.data.local.PourHistoryStore
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.PourStats
+import com.example.smartbartender.util.isObserved
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -29,10 +32,13 @@ class StatsViewModel(
 
     init {
         viewModelScope.launch {
-            history.pourHistory.collect { records ->
-                val stats = PourStats.compute(records, nowMs = clock())
-                _uiState.update { it.copy(isLoading = false, stats = stats) }
-            }
+            // On every visit as well as every new pour: "this week" moves with the clock, and
+            // this ViewModel outlives a tab switch.
+            combine(history.pourHistory, _uiState.isObserved().filter { it }) { records, _ -> records }
+                .collect { records ->
+                    val stats = PourStats.compute(records, nowMs = clock())
+                    _uiState.update { it.copy(isLoading = false, stats = stats) }
+                }
         }
     }
 
