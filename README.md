@@ -69,7 +69,7 @@ it out client-side:
 
 **The four-slot rack.** The machine holds four bottles at a time, so the *One bottle away*
 section carries most of the discovery: it is where you see what ejecting one bottle would buy
-you. The limit is enforced in the data layer, not just the UI — `BartenderPreferences` clamps
+you. The limit is enforced in the data layer, not just the UI — the rack store clamps
 on both read and write, so a rack persisted by an earlier build (or a race between two
 writes) can never present more bottles than the machine has. Slot order follows the catalogue,
 so slot 1 holds the same bottle across restarts. The factory rack is vodka, white rum, lime
@@ -96,16 +96,21 @@ MVVM, unidirectional data flow. Each screen has a ViewModel exposing one immutab
 ```
 app/src/main/java/com/example/smartbartender/
 ├── data/
-│   ├── local/       BartenderPreferences   – DataStore: loaded bottles + LED switch
+│   ├── local/       Stores, DataStoreBartenderPreferences – rack, settings, favourites, drinks, history
+│   ├── hardware/    BartenderMachine, HttpBartenderMachine, RackSync, PourRecorder – the Pi link
+│   ├── network/     shared JSON + logging defaults
 │   ├── remote/      CocktailApi, NetworkModule, dto/ – Retrofit + kotlinx.serialization
 │   └── repository/  CocktailRepository     – fetching, caching, availability engine
-├── domain/model/    Cocktail, Bottle, BottleCatalog, MakeableCocktail
+├── domain/model/    Cocktail, Bottle, BottleCatalog, Availability, PourPlan, MachineError …
 ├── di/              AppContainer           – manual DI, one instance per process
 ├── ui/
+│   ├── common/      load/machine error wording, one-shot events
 │   ├── components/  GlassPanel, LED simulation, skeletons, error/empty states, cards
-│   ├── navigation/  Routes, bottom bar, NavHost
-│   ├── screens/     available/ library/ bottles/ stats/ settings/ detail/  (screen + ViewModel)
+│   ├── navigation/  type-safe routes, bottom bar, NavHost
+│   ├── screens/     available/ library/ bottles/ stats/ settings/ detail/ custom/
+│   │                calibration/ cleaning/ machine/  (screen + ViewModel)
 │   └── theme/       dark neon palette, type scale
+├── util/            runCatchingCancellable
 └── MainActivity.kt, SmartBartenderApplication.kt
 ```
 

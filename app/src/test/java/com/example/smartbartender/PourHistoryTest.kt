@@ -1,5 +1,6 @@
 package com.example.smartbartender
 
+import com.example.smartbartender.data.local.PourHistoryCodec
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.PourHistory
@@ -60,14 +61,14 @@ class PourHistoryTest {
     @Test
     fun `history round-trips through its stored form`() {
         val records = listOf(record("a"), record("b", PourOutcome.ABORTED))
-        assertEquals(records, PourHistory.parse(PourHistory.encode(records)))
+        assertEquals(records, PourHistoryCodec.decode(PourHistoryCodec.encode(records)))
     }
 
     @Test
     fun `blank or corrupt storage degrades to no history`() {
-        assertTrue(PourHistory.parse("").isEmpty())
-        assertTrue(PourHistory.parse("{not json").isEmpty())
-        assertTrue(PourHistory.parse("""[{"jobId":"x","outcome":"EXPLODED"}]""").isEmpty())
+        assertTrue(PourHistoryCodec.decode("").isEmpty())
+        assertTrue(PourHistoryCodec.decode("{not json").isEmpty())
+        assertTrue(PourHistoryCodec.decode("""[{"jobId":"x","outcome":"EXPLODED"}]""").isEmpty())
     }
 
     @Test

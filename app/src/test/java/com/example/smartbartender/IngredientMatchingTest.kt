@@ -1,7 +1,7 @@
 package com.example.smartbartender
 
 import com.example.smartbartender.domain.model.BottleCatalog
-import com.example.smartbartender.domain.model.normalizedIngredient
+import com.example.smartbartender.domain.model.folded
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -12,9 +12,9 @@ class IngredientMatchingTest {
 
     @Test
     fun `normalisation ignores case punctuation and spacing`() {
-        assertEquals("light rum", "  Light  Rum ".normalizedIngredient())
-        assertEquals("coca cola", "Coca-Cola".normalizedIngredient())
-        assertEquals("blue curacao", "Blue Curaçao".normalizedIngredient())
+        assertEquals("light rum", "  Light  Rum ".folded())
+        assertEquals("coca cola", "Coca-Cola".folded())
+        assertEquals("blue curacao", "Blue Curaçao".folded())
     }
 
     @Test
@@ -50,7 +50,7 @@ class IngredientMatchingTest {
 
         val bottleNames = BottleCatalog.bottles
             .flatMap { it.matchNames }
-            .map { it.normalizedIngredient() }
+            .map { it.folded() }
         assertEquals(
             emptyList<String>(),
             BottleCatalog.pantryStaples.filter { it in bottleNames },

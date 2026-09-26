@@ -1,15 +1,17 @@
 package com.example.smartbartender
 
 import com.example.smartbartender.data.remote.dto.CocktailResponse
+import com.example.smartbartender.data.network.LenientJson
+import com.example.smartbartender.data.remote.dto.CocktailDto
 import com.example.smartbartender.data.remote.dto.DrinkSummaryResponse
-import kotlinx.serialization.json.Json
+import com.example.smartbartender.domain.model.AlcoholContent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CocktailDtoTest {
 
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
+    private val json = LenientJson
 
     @Test
     fun `ingredients pair with their measures and empty slots are dropped`() {
@@ -31,6 +33,7 @@ class CocktailDtoTest {
 
         assertEquals("Margarita", cocktail.name)
         assertEquals("Cocktail glass", cocktail.glass)
+        assertEquals(AlcoholContent.ALCOHOLIC, cocktail.alcohol)
         assertEquals(4, cocktail.ingredients.size)
         assertEquals("Tequila", cocktail.ingredients[0].name)
         assertEquals("1 1/2 oz", cocktail.ingredients[0].measure)
@@ -53,5 +56,14 @@ class CocktailDtoTest {
 
         val full = json.decodeFromString<CocktailResponse>("""{"drinks":"None Found"}""")
         assertTrue(full.drinks.isEmpty())
+    }
+
+    @Test
+    fun `strAlcoholic maps to a typed value, and an unknown phrase to none`() {
+        fun alcoholOf(value: String) = CocktailDto(id = "1", alcoholic = value).toDomain().alcohol
+
+        assertEquals(AlcoholContent.NON_ALCOHOLIC, alcoholOf("Non alcoholic"))
+        assertEquals(AlcoholContent.OPTIONAL, alcoholOf("Optional alcohol"))
+        assertEquals(null, alcoholOf("Mostly water"))
     }
 }

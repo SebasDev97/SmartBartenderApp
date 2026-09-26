@@ -1,5 +1,6 @@
 package com.example.smartbartender
 
+import com.example.smartbartender.domain.model.MilestoneKind
 import com.example.smartbartender.domain.model.PourOutcome
 import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourStats
@@ -133,14 +134,15 @@ class PourStatsTest {
     @Test
     fun `milestones track progress towards their targets`() {
         val records = (1..10).map { pour("p$it", drinkId = "d$it", ml = mapOf("vodka" to 110.0)) }
-        val milestones = compute(records).milestones.associateBy { it.title }
+        val milestones = compute(records).milestones.associateBy { it.kind }
 
-        assertTrue(milestones.getValue("First pour").achieved)
-        assertTrue(milestones.getValue("Regular").achieved)
-        assertEquals(0.2f, milestones.getValue("Party host").progress, 0.001f)
-        assertTrue(milestones.getValue("First litre").achieved) // 1100 ml
-        assertTrue(milestones.getValue("Explorer").achieved)
-        assertEquals(0f, milestones.getValue("Designated driver").progress, 0.001f)
+        assertEquals(MilestoneKind.entries.toSet(), milestones.keys)
+        assertTrue(milestones.getValue(MilestoneKind.FIRST_POUR).achieved)
+        assertTrue(milestones.getValue(MilestoneKind.REGULAR).achieved)
+        assertEquals(0.2f, milestones.getValue(MilestoneKind.PARTY_HOST).progress, 0.001f)
+        assertTrue(milestones.getValue(MilestoneKind.FIRST_LITRE).achieved) // 1100 ml
+        assertTrue(milestones.getValue(MilestoneKind.EXPLORER).achieved)
+        assertEquals(0f, milestones.getValue(MilestoneKind.DESIGNATED_DRIVER).progress, 0.001f)
     }
 
     private fun pour(

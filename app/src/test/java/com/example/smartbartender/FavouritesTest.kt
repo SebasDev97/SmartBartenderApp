@@ -1,7 +1,9 @@
 package com.example.smartbartender
 
+import com.example.smartbartender.data.local.FavouritesCodec
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.Favourites
+import com.example.smartbartender.domain.model.filterByName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,21 +35,21 @@ class FavouritesTest {
     @Test
     fun `favourites survive a round trip through storage, in order`() {
         val favourites = listOf(pinaColada, mojito, margarita)
-        assertEquals(favourites, Favourites.parse(Favourites.encode(favourites)))
+        assertEquals(favourites, FavouritesCodec.decode(FavouritesCodec.encode(favourites)))
     }
 
     @Test
     fun `a blank or corrupt stored value degrades to no favourites`() {
-        assertTrue(Favourites.parse("").isEmpty())
-        assertTrue(Favourites.parse("not json").isEmpty())
-        assertTrue(Favourites.parse("""{"id":"11007"}""").isEmpty())
+        assertTrue(FavouritesCodec.decode("").isEmpty())
+        assertTrue(FavouritesCodec.decode("not json").isEmpty())
+        assertTrue(FavouritesCodec.decode("""{"id":"11007"}""").isEmpty())
     }
 
     @Test
     fun `search ignores case and accents`() {
         val favourites = listOf(pinaColada, mojito, margarita)
-        assertEquals(listOf(pinaColada), Favourites.filter(favourites, "PINA"))
-        assertEquals(listOf(margarita), Favourites.filter(favourites, "garit"))
-        assertEquals(favourites, Favourites.filter(favourites, "  "))
+        assertEquals(listOf(pinaColada), favourites.filterByName("PINA") { it.name })
+        assertEquals(listOf(margarita), favourites.filterByName("garit") { it.name })
+        assertEquals(favourites, favourites.filterByName("  ") { it.name })
     }
 }

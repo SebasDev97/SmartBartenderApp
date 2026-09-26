@@ -24,121 +24,100 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.toRoute
+import com.example.smartbartender.R
+import com.example.smartbartender.ui.common.ObserveAsEvents
 import com.example.smartbartender.ui.components.LedAmbience
 import com.example.smartbartender.ui.components.rememberLedState
 import com.example.smartbartender.ui.screens.available.AvailableScreen
 import com.example.smartbartender.ui.screens.available.AvailableViewModel
 import com.example.smartbartender.ui.screens.bottles.BottlesScreen
 import com.example.smartbartender.ui.screens.bottles.BottlesViewModel
-import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorActions
-import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorScreen
-import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorViewModel
-import com.example.smartbartender.ui.screens.detail.DetailScreen
-import com.example.smartbartender.ui.screens.detail.DetailViewModel
-import com.example.smartbartender.ui.screens.library.LibraryScreen
-import com.example.smartbartender.ui.screens.library.LibraryViewModel
-import com.example.smartbartender.ui.screens.settings.SettingsScreen
-import com.example.smartbartender.ui.screens.settings.SettingsViewModel
-import com.example.smartbartender.ui.screens.stats.StatsScreen
-import com.example.smartbartender.ui.screens.stats.StatsViewModel
 import com.example.smartbartender.ui.screens.calibration.CalibrationActions
 import com.example.smartbartender.ui.screens.calibration.CalibrationScreen
 import com.example.smartbartender.ui.screens.calibration.CalibrationViewModel
 import com.example.smartbartender.ui.screens.cleaning.CleaningActions
 import com.example.smartbartender.ui.screens.cleaning.CleaningScreen
 import com.example.smartbartender.ui.screens.cleaning.CleaningViewModel
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorActions
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorScreen
+import com.example.smartbartender.ui.screens.custom.CustomDrinkEditorViewModel
+import com.example.smartbartender.ui.screens.custom.EditorEvent
+import com.example.smartbartender.ui.screens.detail.DetailScreen
+import com.example.smartbartender.ui.screens.detail.DetailViewModel
+import com.example.smartbartender.ui.screens.library.LibraryEvent
+import com.example.smartbartender.ui.screens.library.LibraryScreen
+import com.example.smartbartender.ui.screens.library.LibraryViewModel
+import com.example.smartbartender.ui.screens.settings.SettingsScreen
+import com.example.smartbartender.ui.screens.settings.SettingsViewModel
+import com.example.smartbartender.ui.screens.stats.StatsScreen
+import com.example.smartbartender.ui.screens.stats.StatsViewModel
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextPrimary
 
-/** Root composable: bottom navigation over the top-level tabs, with a pushed detail screen. */
+/** Root composable: bottom navigation over the top-level tabs, with pushed screens on top. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmartBartenderApp() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    val destination = backStackEntry?.destination
 
     // The LED show state lives at the root so every screen shares one animation clock.
     val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
     val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val led = rememberLedState(enabled = settingsState.ledShowEnabled)
 
-    val isTopLevel = TopLevelDestination.entries.any { it.route == currentRoute }
-    val isPushed = currentRoute == Routes.DETAIL || currentRoute == Routes.CUSTOM_EDIT ||
-        currentRoute == Routes.CALIBRATION || currentRoute == Routes.CLEANING
-    val title = if (currentRoute == Routes.CUSTOM_EDIT) {
-        if (backStackEntry?.arguments?.getString("drinkId") == null) "New drink" else "Edit drink"
-    } else if (currentRoute == Routes.CALIBRATION) {
-        "Calibrate pumps"
-    } else if (currentRoute == Routes.CLEANING) {
-        "Clean pumps"
-    } else TopLevelDestination.entries.firstOrNull { it.route == currentRoute }?.let {
-        when (it) {
-            TopLevelDestination.AVAILABLE -> "Smart Bartender"
-            TopLevelDestination.LIBRARY -> "Library"
-            TopLevelDestination.BOTTLES -> "Bottles"
-            TopLevelDestination.STATS -> "Stats"
-            TopLevelDestination.SETTINGS -> "Settings"
-        }
-    } ?: ""
+    val isTopLevel = destination?.isTopLevel() == true
 
     LedAmbience(led = led, modifier = Modifier.fillMaxSize()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
-                if (!isPushed) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                    )
-                } else {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        },
-                        navigationIcon = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = screenTitle(backStackEntry),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    navigationIcon = {
+                        if (destination != null && !isTopLevel) {
                             IconButton(onClick = { navController.popBackStack() }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
+                                    contentDescription = stringResource(R.string.action_back),
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                    )
-                }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                )
             },
             bottomBar = {
                 if (isTopLevel) {
                     BartenderNavigationBar(
-                        currentRoute = currentRoute,
-                        accent = if (led.enabled) led.primary else MaterialTheme.colorScheme.primary,
-                        onSelect = { destination ->
-                            navController.navigate(destination.route) {
+                        destination = destination,
+                        accent = led.primary,
+                        onSelect = { target ->
+                            navController.navigate(target.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
@@ -150,41 +129,46 @@ fun SmartBartenderApp() {
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = Routes.AVAILABLE,
+                startDestination = AvailableRoute,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                composable(Routes.AVAILABLE) {
+                composable<AvailableRoute> {
                     val viewModel: AvailableViewModel = viewModel(factory = AvailableViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     AvailableScreen(
                         state = state,
                         led = led,
-                        onCocktailClick = { id -> navController.navigate(Routes.detail(id)) },
-                        onOpenBottles = { navController.navigate(Routes.BOTTLES) },
+                        onCocktailClick = { id -> navController.navigate(DetailRoute(id)) },
+                        onOpenBottles = { navController.navigate(BottlesRoute) },
                         onRetry = viewModel::retry,
                         contentPadding = innerPadding,
                     )
                 }
 
-                composable(Routes.LIBRARY) {
+                composable<LibraryRoute> {
                     val viewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    ObserveAsEvents(viewModel.events) { event ->
+                        when (event) {
+                            is LibraryEvent.OpenCocktail -> navController.navigate(DetailRoute(event.id))
+                        }
+                    }
                     LibraryScreen(
                         state = state,
                         led = led,
                         onQueryChange = viewModel::onQueryChange,
                         onClearQuery = viewModel::clearQuery,
-                        onCocktailClick = { id -> navController.navigate(Routes.detail(id)) },
+                        onCocktailClick = { id -> navController.navigate(DetailRoute(id)) },
                         onFilterChange = viewModel::setFilter,
                         onFavouriteChange = viewModel::setFavourite,
-                        onCreateDrink = { navController.navigate(Routes.customEdit()) },
-                        onSurpriseMe = { viewModel.surpriseMe { id -> navController.navigate(Routes.detail(id)) } },
+                        onCreateDrink = { navController.navigate(CustomEditRoute()) },
+                        onSurpriseMe = viewModel::surpriseMe,
                         onRetry = viewModel::retry,
                         contentPadding = innerPadding,
                     )
                 }
 
-                composable(Routes.BOTTLES) {
+                composable<BottlesRoute> {
                     val viewModel: BottlesViewModel = viewModel(factory = BottlesViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     BottlesScreen(
@@ -198,13 +182,13 @@ fun SmartBartenderApp() {
                     )
                 }
 
-                composable(Routes.STATS) {
+                composable<StatsRoute> {
                     val viewModel: StatsViewModel = viewModel(factory = StatsViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     StatsScreen(
                         state = state,
                         led = led,
-                        onCocktailClick = { id -> navController.navigate(Routes.detail(id)) },
+                        onCocktailClick = { id -> navController.navigate(DetailRoute(id)) },
                         onResetRequest = viewModel::requestReset,
                         onResetConfirm = viewModel::confirmReset,
                         onResetDismiss = viewModel::dismissReset,
@@ -212,7 +196,7 @@ fun SmartBartenderApp() {
                     )
                 }
 
-                composable(Routes.SETTINGS) {
+                composable<SettingsRoute> {
                     SettingsScreen(
                         state = settingsState,
                         led = led,
@@ -222,13 +206,13 @@ fun SmartBartenderApp() {
                         onMachineEnabledChange = settingsViewModel::setMachineEnabled,
                         onConnect = settingsViewModel::connect,
                         onTestConnection = settingsViewModel::testConnection,
-                        onOpenCalibration = { navController.navigate(Routes.CALIBRATION) },
-                        onOpenCleaning = { navController.navigate(Routes.CLEANING) },
+                        onOpenCalibration = { navController.navigate(CalibrationRoute) },
+                        onOpenCleaning = { navController.navigate(CleaningRoute) },
                         contentPadding = innerPadding,
                     )
                 }
 
-                composable(Routes.CALIBRATION) {
+                composable<CalibrationRoute> {
                     val viewModel: CalibrationViewModel = viewModel(factory = CalibrationViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     CalibrationScreen(
@@ -245,7 +229,7 @@ fun SmartBartenderApp() {
                     )
                 }
 
-                composable(Routes.CLEANING) {
+                composable<CleaningRoute> {
                     val viewModel: CleaningViewModel = viewModel(factory = CleaningViewModel.Factory)
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     CleaningScreen(
@@ -263,10 +247,7 @@ fun SmartBartenderApp() {
                     )
                 }
 
-                composable(
-                    route = Routes.DETAIL,
-                    arguments = listOf(navArgument("cocktailId") { type = NavType.StringType }),
-                ) {
+                composable<DetailRoute> {
                     val viewModel: DetailViewModel = viewModel(factory = DetailViewModel.factory())
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
                     DetailScreen(
@@ -274,7 +255,7 @@ fun SmartBartenderApp() {
                         led = led,
                         onStartPreparation = viewModel::startPreparation,
                         onToggleFavourite = viewModel::toggleFavourite,
-                        onEdit = { state.cocktail?.let { navController.navigate(Routes.customEdit(it.id)) } },
+                        onEdit = { state.cocktail?.let { navController.navigate(CustomEditRoute(it.id)) } },
                         onCancelPreparation = viewModel::cancelPreparation,
                         onFinishAcknowledged = viewModel::acknowledgePreparation,
                         onRetry = viewModel::retry,
@@ -282,18 +263,26 @@ fun SmartBartenderApp() {
                     )
                 }
 
-                composable(
-                    route = Routes.CUSTOM_EDIT,
-                    arguments = listOf(
-                        navArgument("drinkId") {
-                            type = NavType.StringType
-                            nullable = true
-                            defaultValue = null
-                        },
-                    ),
-                ) {
+                composable<CustomEditRoute> {
                     val viewModel: CustomDrinkEditorViewModel = viewModel(factory = CustomDrinkEditorViewModel.factory())
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
+                    ObserveAsEvents(viewModel.events) { event ->
+                        when (event) {
+                            // Land on a new drink, with the editor gone from the back stack.
+                            is EditorEvent.Saved -> if (event.wasNew) {
+                                navController.navigate(DetailRoute(event.id)) {
+                                    popUpTo<CustomEditRoute> { inclusive = true }
+                                }
+                            } else {
+                                navController.popBackStack()
+                            }
+
+                            // The detail screen it was opened from shows a drink that is gone.
+                            EditorEvent.Deleted -> if (!navController.popBackStack<DetailRoute>(inclusive = true)) {
+                                navController.popBackStack()
+                            }
+                        }
+                    }
                     CustomDrinkEditorScreen(
                         state = state,
                         led = led,
@@ -310,27 +299,9 @@ fun SmartBartenderApp() {
                             onOpenBottlePicker = viewModel::openBottlePicker,
                             onDismissBottlePicker = viewModel::dismissBottlePicker,
                             onBottlePicked = viewModel::onBottlePicked,
-                            onSave = {
-                                viewModel.save { id ->
-                                    if (state.isNew) {
-                                        // Land on the new drink, with the editor gone from the back stack.
-                                        navController.navigate(Routes.detail(id)) {
-                                            popUpTo(Routes.CUSTOM_EDIT) { inclusive = true }
-                                        }
-                                    } else {
-                                        navController.popBackStack()
-                                    }
-                                }
-                            },
+                            onSave = viewModel::save,
                             onDeleteRequest = viewModel::requestDelete,
-                            onDeleteConfirm = {
-                                viewModel.confirmDelete {
-                                    // The detail screen it was opened from shows a drink that is gone.
-                                    if (!navController.popBackStack(Routes.DETAIL, inclusive = true)) {
-                                        navController.popBackStack()
-                                    }
-                                }
-                            },
+                            onDeleteConfirm = viewModel::confirmDelete,
                             onDeleteDismiss = viewModel::dismissDelete,
                         ),
                         contentPadding = innerPadding,
@@ -341,9 +312,26 @@ fun SmartBartenderApp() {
     }
 }
 
+private fun NavDestination.isTopLevel(): Boolean =
+    TopLevelDestination.entries.any { hasRoute(it.route::class) }
+
+/** The top-bar title for whatever is on screen; empty while nothing is, and on the recipe screen. */
+@Composable
+private fun screenTitle(entry: NavBackStackEntry?): String {
+    val destination = entry?.destination ?: return ""
+    if (destination.hasRoute<CustomEditRoute>()) {
+        val isNew = entry.toRoute<CustomEditRoute>().drinkId == null
+        return stringResource(if (isNew) R.string.title_new_drink else R.string.title_edit_drink)
+    }
+    val titleRes = TopLevelDestination.entries.firstOrNull { destination.hasRoute(it.route::class) }?.titleRes
+        ?: PushedScreenTitles.entries.firstOrNull { destination.hasRoute(it.key) }?.value
+        ?: return ""
+    return stringResource(titleRes)
+}
+
 @Composable
 private fun BartenderNavigationBar(
-    currentRoute: String?,
+    destination: NavDestination?,
     accent: Color,
     onSelect: (TopLevelDestination) -> Unit,
 ) {
@@ -360,22 +348,22 @@ private fun BartenderNavigationBar(
             containerColor = Color.Transparent,
             tonalElevation = 0.dp,
         ) {
-            TopLevelDestination.entries.forEach { destination ->
-                val selected = currentRoute == destination.route
+            TopLevelDestination.entries.forEach { target ->
+                val selected = destination?.hasRoute(target.route::class) == true
                 val scale by animateFloatAsState(if (selected) 1.05f else 1f, label = "navScale")
                 NavigationBarItem(
                     selected = selected,
-                    onClick = { onSelect(destination) },
+                    onClick = { onSelect(target) },
                     icon = {
                         Icon(
-                            imageVector = destination.icon,
-                            contentDescription = destination.label,
+                            imageVector = target.icon,
+                            contentDescription = stringResource(target.labelRes),
                             modifier = Modifier.height(24.dp * scale),
                         )
                     },
                     label = {
                         Text(
-                            text = destination.label,
+                            text = stringResource(target.labelRes),
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp,

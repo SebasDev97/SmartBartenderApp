@@ -1,7 +1,9 @@
 package com.example.smartbartender
 
+import com.example.smartbartender.domain.model.AlcoholContent
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.MAX_ITEM_ML
+import com.example.smartbartender.domain.model.PlanWarning
 import com.example.smartbartender.domain.model.RecipeIngredient
 import com.example.smartbartender.domain.model.buildPourPlan
 import org.junit.Assert.assertEquals
@@ -22,7 +24,7 @@ class PourPlanTest {
         name = "Margarita",
         thumbUrl = null,
         category = "Ordinary Drink",
-        alcoholic = "Alcoholic",
+        alcohol = AlcoholContent.ALCOHOLIC,
         glass = "Cocktail glass",
         instructions = null,
         ingredients = ingredients.map { (name, measure) -> RecipeIngredient(name, measure) },
@@ -40,8 +42,8 @@ class PourPlanTest {
             maxPourMl = 250.0,
         )
 
-        assertEquals(listOf("tequila", "triple_sec", "lime_juice"), plan.request.items.map { it.bottleId })
-        assertEquals(44.36, plan.request.items[0].ml, 0.01)
+        assertEquals(listOf("tequila", "triple_sec", "lime_juice"), plan.items.map { it.bottleId })
+        assertEquals(44.36, plan.items[0].ml, 0.01)
         assertTrue(plan.isPourable)
     }
 
@@ -53,7 +55,7 @@ class PourPlanTest {
             maxPourMl = 250.0,
         )
 
-        assertEquals(listOf("tequila"), plan.request.items.map { it.bottleId })
+        assertEquals(listOf("tequila"), plan.items.map { it.bottleId })
         assertEquals(listOf("Salt", "Ice"), plan.manualSteps)
     }
 
@@ -65,8 +67,8 @@ class PourPlanTest {
             maxPourMl = 250.0,
         )
 
-        assertEquals(listOf("tequila"), plan.request.items.map { it.bottleId })
-        assertTrue(plan.warnings.any { it.contains("Vodka") && it.contains("not loaded") })
+        assertEquals(listOf("tequila"), plan.items.map { it.bottleId })
+        assertEquals(listOf(PlanWarning.NotLoaded("Vodka")), plan.warnings)
     }
 
     @Test
@@ -76,15 +78,15 @@ class PourPlanTest {
             rack,
             maxPourMl = 250.0,
         )
-        assertEquals(listOf("tequila", "triple_sec"), plan.request.items.map { it.bottleId })
+        assertEquals(listOf("tequila", "triple_sec"), plan.items.map { it.bottleId })
     }
 
     @Test
     fun `a missing measure falls back to the bottle's category and says so`() {
         val plan = buildPourPlan(cocktail("Tequila" to null), rack, maxPourMl = 250.0)
 
-        assertEquals(40.0, plan.request.items.single().ml, 0.01)
-        assertTrue(plan.warnings.any { it.contains("no measure") })
+        assertEquals(40.0, plan.items.single().ml, 0.01)
+        assertEquals(listOf(PlanWarning.NoMeasure("Tequila", 40)), plan.warnings)
     }
 
     @Test
@@ -95,7 +97,7 @@ class PourPlanTest {
             maxPourMl = 100.0,
         )
         // 100 ml glass minus the 29.57 ml of tequila.
-        assertEquals(70.43, plan.request.items[1].ml, 0.01)
+        assertEquals(70.43, plan.items[1].ml, 0.01)
     }
 
     @Test
@@ -108,14 +110,14 @@ class PourPlanTest {
 
         assertEquals(120.0, plan.totalMl, 0.5)
         // Still equal thirds after scaling.
-        assertEquals(plan.request.items[0].ml, plan.request.items[1].ml, 0.01)
-        assertTrue(plan.warnings.any { it.contains("Scaled down") })
+        assertEquals(plan.items[0].ml, plan.items[1].ml, 0.01)
+        assertEquals(listOf(PlanWarning.ScaledToGlass(120)), plan.warnings)
     }
 
     @Test
     fun `no single pour can ever exceed the hard cap`() {
         val plan = buildPourPlan(cocktail("Tequila" to "2 pints"), rack, maxPourMl = 1000.0)
-        assertTrue(plan.request.items.single().ml <= MAX_ITEM_ML)
+        assertTrue(plan.items.single().ml <= MAX_ITEM_ML)
     }
 
     @Test
@@ -132,6 +134,17 @@ class PourPlanTest {
             maxPourMl = 250.0,
         )
         // 60 ml of fixed volume over 2 parts is 30 ml a part, so two parts is 60 ml.
-        assertEquals(60.0, plan.request.items[1].ml, 0.01)
+        assertEquals(60.0, plan.items[1].ml, 0.01)
+    }
+
+    @Test
+    fun `the request carries the plan and the caller's job id`() {
+        val plan = buildPourPlan(cocktail("Tequila" to "1 oz", "Salt" to null), rack, maxPourMl = 250.0)
+        val request = plan.toRequest("job-9")
+
+        assertEquals("job-9", request.jobId)
+        assertEquals(plan.items, request.items)
+        assertEquals(plan.manualSteps, request.manualSteps)
+        assertEquals("11007", request.drinkId)
     }
 }

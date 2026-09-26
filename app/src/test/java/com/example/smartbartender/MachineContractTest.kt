@@ -8,14 +8,15 @@ import com.example.smartbartender.data.hardware.dto.LedDto
 import com.example.smartbartender.data.hardware.dto.MachineStatusDto
 import com.example.smartbartender.data.hardware.dto.PourJobDto
 import com.example.smartbartender.data.hardware.dto.SensorReadingDto
+import com.example.smartbartender.data.network.LenientJson
 import com.example.smartbartender.domain.model.CalibrationPhase
-import com.example.smartbartender.domain.model.CalibrationStatus
 import com.example.smartbartender.domain.model.CleaningPhase
-import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.domain.model.JobStatus
+import com.example.smartbartender.domain.model.LedMode
+import com.example.smartbartender.domain.model.MachineBackend
 import com.example.smartbartender.domain.model.MachineRunState
+import com.example.smartbartender.domain.model.RunStatus
 import com.example.smartbartender.domain.model.StepKind
-import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -33,12 +34,8 @@ import org.junit.Test
  */
 class MachineContractTest {
 
-    /** The same configuration the app uses; see MachineNetworkModule. */
-    private val json = Json {
-        ignoreUnknownKeys = true
-        coerceInputValues = true
-        isLenient = true
-    }
+    /** The configuration the app itself decodes with. */
+    private val json = LenientJson
 
     private val health = """{"ok":true,"machineId":"bartender-01","firmware":"0.1.0"}"""
 
@@ -87,6 +84,7 @@ class MachineContractTest {
         assertEquals("bartender-01", snapshot.machineId)
         assertEquals(MachineRunState.IDLE, snapshot.state)
         assertEquals(4, snapshot.pumpCount)
+        assertEquals(MachineBackend.SIMULATED, snapshot.backend)
         assertTrue(snapshot.isSimulated)
         assertEquals(250.0, snapshot.maxPourMl, 0.01)
     }
@@ -139,19 +137,30 @@ class MachineContractTest {
     fun `an led response decodes`() {
         val led = json.decodeFromString<LedDto>(ledResponse).toDomain()
         assertEquals(false, led.enabled)
-        assertEquals("off", led.mode)
+        assertEquals(LedMode.OFF, led.mode)
     }
 
     @Test
     fun `an unknown status or step kind degrades instead of throwing`() {
         // Newer firmware may add values this build has never heard of. That must not be
         // fatal halfway through a pour.
-        val future = pourJob.replace("\"status\":\"queued\"", "\"status\":\"priming\"")
+        val future = pourJob
+            .replace("\"status\":\"queued\"", "\"status\":\"priming\"")
             .replace("\"kind\":\"mix\"", "\"kind\":\"shake\"")
         val job = json.decodeFromString<PourJobDto>(future).toDomain()
 
         assertEquals(JobStatus.UNKNOWN, job.status)
         assertTrue(job.steps.any { it.kind == StepKind.UNKNOWN })
+    }
+
+    @Test
+    fun `an unknown backend or led mode degrades instead of throwing`() {
+        val future = status.replace("\"backend\":\"simulated\"", "\"backend\":\"esp32\"")
+            .replace("\"mode\":\"spectrum\"", "\"mode\":\"strobe\"")
+        val snapshot = json.decodeFromString<MachineStatusDto>(future).toDomain()
+
+        assertEquals(MachineBackend.UNKNOWN, snapshot.backend)
+        assertEquals(LedMode.UNKNOWN, snapshot.led.mode)
     }
 
     @Test
@@ -195,7 +204,7 @@ class MachineContractTest {
         assertEquals(MachineRunState.BUSY, snapshot.state)
         assertEquals(16.3, snapshot.sensorReferenceCm!!, 0.001)
         assertEquals(58.0, snapshot.glassDiameterMm, 0.001)
-        assertEquals(CalibrationStatus.RUNNING, snapshot.calibration?.status)
+        assertEquals(RunStatus.RUNNING, snapshot.calibration?.status)
     }
 
     @Test
@@ -204,7 +213,7 @@ class MachineContractTest {
         assertEquals("calibration", envelope.type)
 
         val run = json.decodeFromJsonElement(CalibrationRunDto.serializer(), envelope.payload).toDomain()
-        assertEquals(CalibrationStatus.FINISHED, run.status)
+        assertEquals(RunStatus.FINISHED, run.status)
         assertEquals(CalibrationPhase.DONE, run.phase)
         assertEquals(listOf(1), run.results.map { it.pump })
         assertTrue(run.results.single().mlPerSecond > 0)
@@ -217,7 +226,7 @@ class MachineContractTest {
 
         assertEquals(MachineRunState.BUSY, snapshot.state)
         assertNull(snapshot.calibration)
-        assertEquals(CleaningStatus.RUNNING, snapshot.cleaning?.status)
+        assertEquals(RunStatus.RUNNING, snapshot.cleaning?.status)
         assertEquals(listOf(1, 2), snapshot.cleaning?.pumps)
     }
 
@@ -227,7 +236,7 @@ class MachineContractTest {
         assertEquals("cleaning", envelope.type)
 
         val run = json.decodeFromJsonElement(CleaningRunDto.serializer(), envelope.payload).toDomain()
-        assertEquals(CleaningStatus.RUNNING, run.status)
+        assertEquals(RunStatus.RUNNING, run.status)
         assertEquals(CleaningPhase.PUMPING, run.phase)
         assertEquals(1, run.currentRound)
         assertEquals(1, run.currentPump)
@@ -241,7 +250,7 @@ class MachineContractTest {
         val envelope = json.decodeFromString<EventEnvelopeDto>(cleaningFinishedEvent)
         val run = json.decodeFromJsonElement(CleaningRunDto.serializer(), envelope.payload).toDomain()
 
-        assertEquals(CleaningStatus.FINISHED, run.status)
+        assertEquals(RunStatus.FINISHED, run.status)
         assertEquals(CleaningPhase.DONE, run.phase)
         assertTrue(run.status.isTerminal)
         assertNull(run.currentPump)

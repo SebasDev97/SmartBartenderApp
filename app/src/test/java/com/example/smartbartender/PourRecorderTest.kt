@@ -2,16 +2,17 @@ package com.example.smartbartender
 
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.data.hardware.PourRecorder
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.ActiveJobStore
+import com.example.smartbartender.data.local.PourHistoryStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CleaningRun
-import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.ConnectionState
-import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
+import com.example.smartbartender.domain.model.LedMode
 import com.example.smartbartender.domain.model.LedShow
-import com.example.smartbartender.domain.model.MachineAddress
+import com.example.smartbartender.domain.model.MachineBackend
 import com.example.smartbartender.domain.model.MachineRunState
 import com.example.smartbartender.domain.model.MachineSlot
 import com.example.smartbartender.domain.model.MachineSnapshot
@@ -60,7 +61,7 @@ class PourRecorderTest {
         override suspend fun pushSlots(slots: List<String?>) = Result.success(Unit)
         override suspend fun startPour(request: PourRequest): Result<PourJob> = error("not used")
         override suspend fun abort(jobId: String) = Result.success(Unit)
-        override suspend fun setLed(enabled: Boolean, cycleMillis: Int) = Result.success(Unit)
+        override suspend fun setLed(enabled: Boolean) = Result.success(Unit)
 
         override suspend fun fetchJob(jobId: String): Result<PourJob> {
             fetched += jobId
@@ -69,23 +70,16 @@ class PourRecorderTest {
         }
     }
 
-    private class FakePreferences : BartenderPreferences {
+    /** Only the three stores the recorder reads; a fake no bigger than what it depends on. */
+    private class FakePreferences : ActiveJobStore, PourHistoryStore, RackStore {
         override val loadedBottleIds = MutableStateFlow(setOf("tequila", "triple_sec"))
         override val slots = MutableStateFlow(listOf("tequila", "triple_sec", null, null))
-        override val ledShowEnabled = MutableStateFlow(true)
-        override val machineAddress = MutableStateFlow(MachineAddress("10.0.2.2", 8080, enabled = true))
         override val activeJobId = MutableStateFlow<String?>(null)
-        override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
         override val pourHistory = MutableStateFlow<List<PourRecord>>(emptyList())
-        override val customDrinks = MutableStateFlow<List<CustomDrink>>(emptyList())
 
         override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
         override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
-        override suspend fun setSlots(slots: List<String?>) = Unit
-        override suspend fun setLedShowEnabled(enabled: Boolean) = Unit
-        override suspend fun setMachineAddress(host: String, port: Int, enabled: Boolean) = Unit
         override suspend fun setActiveJobId(jobId: String?) { activeJobId.value = jobId }
-        override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) = Unit
 
         // The real append, so de-duplication is tested rather than faked.
         override suspend fun recordPour(record: PourRecord) {
@@ -93,13 +87,11 @@ class PourRecorderTest {
         }
 
         override suspend fun clearPourHistory() { pourHistory.value = emptyList() }
-        override suspend fun saveCustomDrink(drink: CustomDrink) = Unit
-        override suspend fun deleteCustomDrink(id: String) = Unit
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun TestScope.recorder(machine: FakeMachine, preferences: FakePreferences) {
-        PourRecorder(machine, preferences, backgroundScope, clock = { 1_000L })
+        PourRecorder(machine, preferences, preferences, preferences, backgroundScope, clock = { 1_000L }).start()
         runCurrent()
     }
 
@@ -210,7 +202,7 @@ private fun snapshot() = MachineSnapshot(
     machineId = "bartender-01",
     name = "Smart Bartender",
     firmware = "0.1.0",
-    backend = "simulated",
+    backend = MachineBackend.SIMULATED,
     state = MachineRunState.IDLE,
     pumpCount = 4,
     maxPourMl = 250.0,
@@ -220,7 +212,7 @@ private fun snapshot() = MachineSnapshot(
         MachineSlot(3, null, 12.5),
         MachineSlot(4, null, 12.5),
     ),
-    led = LedShow(enabled = true, mode = "spectrum", cycleMillis = 7000),
+    led = LedShow(enabled = true, mode = LedMode.SPECTRUM, cycleMillis = LedShow.CYCLE_MILLIS),
     currentJob = null,
     fault = null,
 )

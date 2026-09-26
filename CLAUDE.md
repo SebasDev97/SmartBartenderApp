@@ -52,14 +52,30 @@ there first, then reference it as `libs.…` in `app/build.gradle.kts`.
 
 MVVM with unidirectional data flow. Every screen owns a ViewModel that exposes one immutable
 `…UiState` over a `StateFlow`; composables are stateless and take `state` plus callbacks.
+Something a ViewModel needs its host to do *once* — navigate after a save, open the drink
+"Surprise me" picked — goes out as an event on a buffered `Channel`, collected with
+`ObserveAsEvents` in `ui/common/`. Don't pass navigation lambdas into a ViewModel.
 
-**Dependency injection is manual.** `AppContainer` (created once in `SmartBartenderApplication`)
-holds the single `CocktailRepository` and `BartenderPreferences`. ViewModels get them through
-`containerViewModelFactory { container -> … }` in `di/ViewModelExt.kt`, declared as a
-`companion object { val Factory = … }` on each ViewModel and passed to `viewModel(factory = …)`
-in `ui/navigation/SmartBartenderApp.kt`. `DetailViewModel` is the exception: it needs the nav
-argument, so it builds its factory by hand with `createSavedStateHandle()`. Do not introduce
-Hilt/Koin without a reason — the container pattern is deliberate.
+**Dependency injection is manual.** `AppContainer` (created once in `SmartBartenderApplication`,
+which also calls its `start()`) holds the single `CocktailRepository`, the machine, and the
+persisted stores. ViewModels get them through `containerViewModelFactory { container -> … }` in
+`di/ViewModelExt.kt`, declared as a `companion object { val Factory = … }` on each ViewModel and
+passed to `viewModel(factory = …)` in `ui/navigation/SmartBartenderApp.kt`. `DetailViewModel` and
+`CustomDrinkEditorViewModel` are the exceptions: they need their nav argument, so they build their
+factory by hand and read it with `createSavedStateHandle().toRoute<…>()`. Routes are type-safe
+`@Serializable` objects in `ui/navigation/Destinations.kt`. Do not introduce Hilt/Koin without a
+reason — the container pattern is deliberate.
+
+**Persisted state is split by concern** (`data/local/Stores.kt`): `RackStore`,
+`MachineSettingsStore`, `ActiveJobStore`, `FavouritesStore`, `CustomDrinkStore`,
+`PourHistoryStore`. Depend on the narrowest one you need. `DataStoreBartenderPreferences` is the
+only implementation, and the JSON-list codecs it uses live beside it in `StoredLists.kt` — the
+domain layer knows nothing about storage formats.
+
+**User-facing text lives in `res/values/strings.xml`.** The domain returns typed reasons
+(`PlanWarning`, `DrinkProblem`, `MilestoneKind`, `MachineError`) and the UI words them; the only
+prose that passes through untouched is what the Pi writes itself (step labels, run messages,
+refusal messages).
 
 ### The availability engine (`data/repository/CocktailRepository.kt`)
 
@@ -73,33 +89,34 @@ bottles" endpoint, so `findMakeable()` computes it client-side from two candidat
    drink per ingredient**; without it the Available tab would show a handful of drinks. Swap in
    a real API key and source 1 widens on its own — nothing else changes.
 
-Recipes are then scored: 0 missing ingredients → *can make now*, exactly 1 → *one bottle away*,
-2+ → dropped. Everything is cached in memory for the process lifetime (`cocktailsById`,
+Recipes are then scored by `domain/model/Availability.kt`: 0 missing ingredients → *can make
+now*, exactly 1 → *one bottle away*, 2+ → dropped. Custom drinks go through the same scorer. Everything is cached in memory for the process lifetime (`cocktailsById`,
 `candidatesByIngredient`, `recipeCatalog`, `lastAvailability`) behind `cacheLock`/`catalogLock`,
 with a `Semaphore(6)` bounding parallel requests to the public API. Fan-outs use
 `supervisorScope` + `runCatching` so a partial failure degrades instead of blanking the screen;
 only an all-pages failure throws.
 
-`lastAvailability` is keyed on the loaded-bottle id set, but `BottlesViewModel` also calls
-`repository.invalidateAvailability()` after every rack change — keep that call when adding new
-ways to mutate the rack.
+`lastAvailability` is keyed on the loaded-bottle id set, so a rack change recomputes it on its
+own. Telling the *machine* about a rack change is `data/hardware/RackSync.kt`'s job: it watches
+`RackStore.slots` app-wide, so a new way to change the rack needs no extra call.
 
 ### Ingredient matching (`domain/model/BottleCatalog.kt`)
 
 The single place to edit when the machine's rack changes. It owns the bottle catalog (each
 `Bottle` carries `apiName` + `aliases`, so "Light rum"/"White rum"/"Rum" are one bottle), the
 `pantryStaples` set (ice, sugar, salt, mint, garnishes always count as available), and
-`String.normalizedIngredient()` — the case/accent/punctuation-insensitive form used for *all*
-ingredient comparisons ("Curaçao" == "Curacao"). Any new comparison must go through it.
+`String.folded()` (in `TextFolding.kt`) — the case/accent/punctuation-insensitive form used for
+*all* ingredient comparisons ("Curaçao" == "Curacao") and every name search
+(`filterByName`). Any new comparison must go through it.
 
 `MAX_SLOTS = 4` is the machine's physical slot count. The limit is enforced in the data layer,
 not just the UI: `clampToCapacity()` is applied on both read and write in
-`BartenderPreferences`, and `inSlotOrder()` keeps slot 1 the same bottle across restarts.
+`DataStoreBartenderPreferences`, and `inSlotOrder()` keeps slot 1 the same bottle across restarts.
 
 ### API quirks (`data/remote/dto/CocktailDto.kt`)
 
-TheCocktailDB answers a miss with `"drinks": null` *or* the bare string `"drinks": "no data
-found"`. `LenientDrinkListSerializer` turns anything that is not a JSON array into an empty
+TheCocktailDB answers a miss with `"drinks": null` *or* a bare string such as `"no data found"`
+or `"None Found"`. `LenientDrinkListSerializer` turns anything that is not a JSON array into an empty
 list, so a miss is never a parse error. Recipes arrive as 15 flat `strIngredientN`/`strMeasureN`
 pairs that `ingredientPairs()` zips and trims.
 
@@ -117,7 +134,7 @@ Five rules that are easy to break:
    a retry safe — the machine returns the running job instead of pouring a second drink.
 2. **Every WebSocket event carries a whole object, never a delta**, so `reduce()` is always a
    replace. Keep it that way; it is what makes a reconnect self-healing.
-3. **`slot_assignment` is positional.** Index 0 is pump 1. `BartenderPreferences.writeRack()`
+3. **`slot_assignment` is positional.** Index 0 is pump 1. `DataStoreBartenderPreferences.writeRack()`
    is the only place the rack is written, and it writes membership and slot order in one
    `dataStore.edit {}` so they cannot drift. Getting this wrong pours the wrong liquid.
 4. **The glass sensor gates every pour.** The Pi waits (no timeout) for an empty glass before
@@ -126,12 +143,19 @@ Five rules that are easy to break:
    the time-based `dispensedMl` for the sensor's measurement (`measured: true`), which is what
    the Stats tab then counts. Pump rates come from the Pi's calibration file
    (`~/pump_calibration.json`), driven from `ui/screens/calibration/`; a finished run is kept in
-   the snapshot by `HttpBartenderMachine.keepingEndedCalibration` because the Pi's own snapshot
+   the snapshot by `HttpBartenderMachine.keepingEndedRuns` because the Pi's own snapshot
    only carries a running one.
 5. **Cleartext HTTP is enabled app-wide** in `res/xml/network_security_config.xml`, because the
    machine is plain `http://` on a LAN and its address is typed in at runtime. Without it every
    request fails with `CLEARTEXT communication ... not permitted`, which looks exactly like the
    machine being offline.
+
+Every machine command returns a `Result` whose failure is a `MachineException` carrying a typed
+`MachineError` (`domain/model/MachineError.kt`); read it with `toMachineError()` rather than
+parsing a message. A refusal keeps the Pi's `code`, so callers can branch on `NOT_CALIBRATED`.
+
+The detail screen's pour is one sealed `PourPhase` (`Idle`, `Pouring`, `Finished`, `Failed`),
+produced by the pure `reducePour()` — not a set of booleans.
 
 `domain/model/Measure.kt` and `domain/model/PourPlan.kt` are the only places a recipe becomes
 millilitres. TheCocktailDB measures are free text (`"1 1/2 oz"`, `"2-3 oz"`, `"Fill"`, `null`),
@@ -162,7 +186,8 @@ is in the pure `PourStats.compute()`. It uses `java.util.Calendar`, because minS
 parameter — one shared animation clock keeps the strip preview, panel edges, bottom bar,
 ambient glow and pour animation in step. The infinite transition runs regardless of whether the show
 is enabled (so toggling never restructures the composition); when off, colours collapse to
-neutral cyan. Don't call `rememberLedState` inside a screen.
+neutral cyan, so `led.primary` is always the accent to draw with — no need to check
+`led.enabled` first. Don't call `rememberLedState` inside a screen; previews use `LedState.Off`.
 
 ### Theme
 
@@ -177,9 +202,10 @@ hand-written fakes — there is no mocking library, and `AvailabilityTest`'s `Fa
 pattern to copy. They cover ingredient normalisation and alias resolution, the 15-slot
 ingredient/measure pairing, both miss-response shapes, the four-slot clamp,
 can-make/almost/not-shown classification, measure parsing, pour planning, slot ordering,
-favourites storage and search, pour history and statistics, the pour recorder, the pour reducer, and the machine contract through a `FakeMachine`/`FakePreferences` pair.
-`BartenderPreferences` is an interface for that last reason; `DataStoreBartenderPreferences` is
-the only implementation that ships.
+favourites storage and search, pour history and statistics, the pour recorder, the pour reducer,
+and the machine contract through a `FakeMachine` and fakes of the stores. The stores are
+interfaces for that last reason, and small ones, so a fake implements only what its subject
+reads.
 
 When touching the availability engine or the catalog, extend `AvailabilityTest` with a fake
 `CocktailApi` rather than hitting the network. When touching the pour, extend `PourReducerTest`

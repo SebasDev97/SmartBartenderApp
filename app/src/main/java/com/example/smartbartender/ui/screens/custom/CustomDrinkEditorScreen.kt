@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -59,15 +60,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.smartbartender.domain.model.Bottle
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.BottleCatalog
-import com.example.smartbartender.domain.model.BottleCategory
+import com.example.smartbartender.domain.model.DrinkProblem
 import com.example.smartbartender.ui.components.CocktailImage
 import com.example.smartbartender.ui.components.EmptyState
 import com.example.smartbartender.ui.components.GlassPanel
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.MetaChip
 import com.example.smartbartender.ui.components.SectionHeader
+import com.example.smartbartender.ui.components.label
 import com.example.smartbartender.ui.theme.ErrorRed
 import com.example.smartbartender.ui.theme.NeonAmber
 import com.example.smartbartender.ui.theme.NeonCyan
@@ -95,7 +97,7 @@ data class CustomDrinkEditorActions(
     val onDeleteDismiss: () -> Unit,
 )
 
-/** Build or change a drink of your own: a name, a look, and up to four bottles with exact ml. */
+/** Build or change a drink of your own: a name, a look, and a bottle per slot with exact ml. */
 @Composable
 fun CustomDrinkEditorScreen(
     state: CustomDrinkEditorUiState,
@@ -104,14 +106,14 @@ fun CustomDrinkEditorScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
+    val accent = led.primary
 
     when {
         state.isLoading -> Box(modifier.fillMaxSize())
         state.notFound -> EmptyState(
             icon = Icons.Outlined.SearchOff,
-            title = "Drink not found",
-            message = "This drink was deleted.",
+            title = stringResource(R.string.editor_not_found),
+            message = stringResource(R.string.error_drink_deleted),
             modifier = modifier.padding(contentPadding),
         )
         else -> EditorForm(state, accent, actions, modifier, contentPadding)
@@ -131,13 +133,21 @@ fun CustomDrinkEditorScreen(
     if (state.showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = actions.onDeleteDismiss,
-            title = { Text("Delete \"${state.name.ifBlank { "this drink" }}\"?") },
-            text = { Text("It's removed from My drinks and Favourites. Pours already made stay in Stats.") },
+            title = {
+                Text(
+                    if (state.name.isBlank()) {
+                        stringResource(R.string.editor_delete_title_unnamed)
+                    } else {
+                        stringResource(R.string.editor_delete_title, state.name)
+                    },
+                )
+            },
+            text = { Text(stringResource(R.string.editor_delete_message)) },
             confirmButton = {
-                TextButton(onClick = actions.onDeleteConfirm) { Text("Delete", color = ErrorRed) }
+                TextButton(onClick = actions.onDeleteConfirm) { Text(stringResource(R.string.editor_delete), color = ErrorRed) }
             },
             dismissButton = {
-                TextButton(onClick = actions.onDeleteDismiss) { Text("Cancel") }
+                TextButton(onClick = actions.onDeleteDismiss) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -178,8 +188,8 @@ private fun EditorForm(
                 onValueChange = actions.onNameChange,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                label = { Text("Name") },
-                placeholder = { Text("e.g. Sunset Cooler", color = TextSecondary) },
+                label = { Text(stringResource(R.string.editor_name)) },
+                placeholder = { Text(stringResource(R.string.editor_name_placeholder), color = TextSecondary) },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Words,
                     imeAction = ImeAction.Done,
@@ -190,7 +200,7 @@ private fun EditorForm(
         }
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "Look", accent = accent)
+        SectionHeader(title = stringResource(R.string.editor_look), accent = accent)
         Spacer(Modifier.height(10.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -224,20 +234,22 @@ private fun EditorForm(
                         .clickable { actions.onColourChange(argb) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (selected) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Obsidian)
+                    if (selected) {
+                        Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.editor_selected), tint = Obsidian)
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(24.dp))
         SectionHeader(
-            title = "Ingredients",
-            trailing = "${state.items.size} of ${BottleCatalog.MAX_SLOTS}",
+            title = stringResource(R.string.detail_ingredients),
+            trailing = stringResource(R.string.editor_items_count, state.items.size, BottleCatalog.MAX_SLOTS),
             accent = accent,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Poured top to bottom.",
+            text = stringResource(R.string.editor_pour_order),
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
         )
@@ -264,7 +276,7 @@ private fun EditorForm(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, tint = accent)
                 Spacer(Modifier.width(6.dp))
-                Text("Add ingredient", color = accent)
+                Text(stringResource(R.string.editor_add_ingredient), color = accent)
             }
         }
 
@@ -272,14 +284,14 @@ private fun EditorForm(
         TotalReadout(totalMl = state.totalMl, maxPourMl = state.maxPourMl, accent = accent)
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "Notes", accent = accent)
+        SectionHeader(title = stringResource(R.string.editor_notes), accent = accent)
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = state.notes,
             onValueChange = actions.onNotesChange,
             modifier = Modifier.fillMaxWidth(),
             minLines = 3,
-            placeholder = { Text("Add ice first, garnish with a lime wedge…", color = TextSecondary) },
+            placeholder = { Text(stringResource(R.string.editor_notes_placeholder), color = TextSecondary) },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             shape = MaterialTheme.shapes.large,
             colors = fieldColours(accent),
@@ -300,15 +312,15 @@ private fun EditorForm(
             ),
         ) {
             Text(
-                text = if (state.isNew) "Save drink" else "Save changes",
+                text = stringResource(if (state.isNew) R.string.editor_save_new else R.string.editor_save_changes),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )
         }
-        if (state.errors.isNotEmpty()) {
+        if (state.problems.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text(
-                text = state.errors.joinToString("\n"),
+                text = state.problems.map { it.text() }.joinToString("\n"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -324,7 +336,7 @@ private fun EditorForm(
             ) {
                 Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = ErrorRed)
                 Spacer(Modifier.width(6.dp))
-                Text("Delete drink", color = ErrorRed)
+                Text(stringResource(R.string.editor_delete_drink), color = ErrorRed)
             }
         }
     }
@@ -359,41 +371,41 @@ private fun IngredientEditorRow(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(
-                        text = bottle?.displayName ?: "Choose a bottle",
+                        text = bottle?.displayName ?: stringResource(R.string.editor_choose_bottle),
                         style = MaterialTheme.typography.titleMedium,
                         color = if (bottle == null) TextSecondary else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                if (!isLoaded) MetaChip(text = "Not loaded", accent = NeonAmber)
+                if (!isLoaded) MetaChip(text = stringResource(R.string.editor_not_loaded), accent = NeonAmber)
                 IconButton(onClick = { actions.onRemoveItem(item.key) }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove ingredient", tint = TextSecondary)
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.editor_remove_ingredient), tint = TextSecondary)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.width(20.dp))
                 IconButton(onClick = { actions.onStepMl(item.key, -ML_STEP) }) {
-                    Icon(Icons.Filled.Remove, contentDescription = "$ML_STEP ml less", tint = accent)
+                    Icon(Icons.Filled.Remove, contentDescription = stringResource(R.string.editor_ml_less, ML_STEP), tint = accent)
                 }
                 OutlinedTextField(
                     value = item.mlText,
                     onValueChange = { actions.onMlTextChange(item.key, it) },
                     modifier = Modifier.width(96.dp),
                     singleLine = true,
-                    suffix = { Text("ml", color = TextSecondary) },
+                    suffix = { Text(stringResource(R.string.unit_ml), color = TextSecondary) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                     shape = RoundedCornerShape(12.dp),
                     colors = fieldColours(accent),
                 )
                 IconButton(onClick = { actions.onStepMl(item.key, ML_STEP) }) {
-                    Icon(Icons.Filled.Add, contentDescription = "$ML_STEP ml more", tint = accent)
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.editor_ml_more, ML_STEP), tint = accent)
                 }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { actions.onMoveItem(item.key, -1) }, enabled = !isFirst) {
-                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Pour earlier")
+                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.editor_pour_earlier))
                 }
                 IconButton(onClick = { actions.onMoveItem(item.key, 1) }, enabled = !isLast) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Pour later")
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.editor_pour_later))
                 }
             }
         }
@@ -406,9 +418,9 @@ private fun TotalReadout(totalMl: Int, maxPourMl: Double, accent: Color) {
     val colour = if (over) ErrorRed else accent
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text("Total", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.editor_total), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(
-                text = "$totalMl / ${maxPourMl.toInt()} ml",
+                text = stringResource(R.string.pour_step_volume, totalMl, maxPourMl.toInt()),
                 style = MaterialTheme.typography.titleMedium,
                 color = colour,
             )
@@ -440,12 +452,11 @@ private fun BottlePickerSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        val grouped: Map<BottleCategory, List<Bottle>> = BottleCatalog.bottles.groupBy { it.category }
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
-            grouped.forEach { (category, bottles) ->
+            BottleCatalog.byCategory.forEach { (category, bottles) ->
                 item(key = category.name) {
                     SectionHeader(
-                        title = category.label,
+                        title = category.label(),
                         accent = NeonCyan,
                         modifier = Modifier.padding(top = 16.dp, bottom = 6.dp),
                     )
@@ -467,14 +478,29 @@ private fun BottlePickerSheet(
                             modifier = Modifier.weight(1f),
                         )
                         when {
-                            taken -> Text("In use", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                            bottle.id in loadedBottleIds -> MetaChip(text = "Loaded", accent = NeonCyan)
+                            taken -> Text(
+                                stringResource(R.string.editor_in_use),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                            )
+                            bottle.id in loadedBottleIds -> MetaChip(text = stringResource(R.string.editor_loaded), accent = NeonCyan)
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun DrinkProblem.text(): String = when (this) {
+    DrinkProblem.NoName -> stringResource(R.string.problem_no_name)
+    DrinkProblem.NoItems -> stringResource(R.string.problem_no_items)
+    is DrinkProblem.TooManyItems -> stringResource(R.string.problem_too_many_items, maxItems)
+    DrinkProblem.BottleMissing -> stringResource(R.string.problem_bottle_missing)
+    DrinkProblem.BottleRepeated -> stringResource(R.string.problem_bottle_repeated)
+    is DrinkProblem.VolumeOutOfRange -> stringResource(R.string.problem_volume_range, minMl, maxMl)
+    is DrinkProblem.OverGlass -> stringResource(R.string.problem_over_glass, totalMl, glassMl)
 }
 
 @Composable

@@ -1,9 +1,13 @@
 package com.example.smartbartender
 
+import com.example.smartbartender.data.local.CustomDrinksCodec
+import com.example.smartbartender.domain.model.Availability
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.CustomItem
+import com.example.smartbartender.domain.model.DrinkProblem
+import com.example.smartbartender.domain.model.PlanWarning
 import com.example.smartbartender.domain.model.buildPourPlan
 import com.example.smartbartender.domain.model.toCocktail
 import org.junit.Assert.assertEquals
@@ -38,24 +42,24 @@ class CustomDrinksTest {
             drink("vodka" to 40, "cola" to 120),
             drink("light_rum" to 50, "lime_juice" to 20, id = "custom-2", name = "Daiquiri-ish"),
         )
-        assertEquals(drinks, CustomDrinks.parse(CustomDrinks.encode(drinks)))
+        assertEquals(drinks, CustomDrinksCodec.decode(CustomDrinksCodec.encode(drinks)))
     }
 
     @Test
     fun `a blank or corrupt stored value degrades to no drinks`() {
-        assertEquals(emptyList<CustomDrink>(), CustomDrinks.parse(""))
-        assertEquals(emptyList<CustomDrink>(), CustomDrinks.parse("{not json"))
+        assertEquals(emptyList<CustomDrink>(), CustomDrinksCodec.decode(""))
+        assertEquals(emptyList<CustomDrink>(), CustomDrinksCodec.decode("{not json"))
     }
 
     @Test
     fun `a bottle that left the catalog is dropped, and a drink left empty goes with it`() {
-        val stored = CustomDrinks.encode(
+        val stored = CustomDrinksCodec.encode(
             listOf(
                 drink("vodka" to 40, "unobtainium" to 20),
                 drink("unobtainium" to 20, id = "custom-2"),
             ),
         )
-        val parsed = CustomDrinks.parse(stored)
+        val parsed = CustomDrinksCodec.decode(stored)
         assertEquals(listOf("custom-1"), parsed.map { it.id })
         assertEquals(listOf(CustomItem("vodka", 40)), parsed.single().items)
     }
@@ -89,55 +93,56 @@ class CustomDrinksTest {
 
     @Test
     fun `a sensible drink is valid`() {
-        assertEquals(emptyList<String>(), CustomDrinks.validate(drink("vodka" to 40, "cola" to 120), 250.0))
+        assertEquals(emptyList<DrinkProblem>(), CustomDrinks.validate(drink("vodka" to 40, "cola" to 120), 250.0))
     }
 
     @Test
     fun `a drink needs a name and at least one ingredient`() {
-        assertEquals(1, CustomDrinks.validate(drink("vodka" to 40, name = "  "), 250.0).size)
-        assertEquals(1, CustomDrinks.validate(drink(), 250.0).size)
+        assertEquals(listOf(DrinkProblem.NoName), CustomDrinks.validate(drink("vodka" to 40, name = "  "), 250.0))
+        assertEquals(listOf(DrinkProblem.NoItems), CustomDrinks.validate(drink(), 250.0))
     }
 
     @Test
     fun `no more ingredients than the machine has slots`() {
         val tooMany = drink("vodka" to 10, "gin" to 10, "cola" to 10, "lime_juice" to 10, "tonic_water" to 10)
         assertEquals(BottleCatalog.MAX_SLOTS + 1, tooMany.items.size)
-        assertEquals(1, CustomDrinks.validate(tooMany, 250.0).size)
+        assertEquals(listOf(DrinkProblem.TooManyItems(BottleCatalog.MAX_SLOTS)), CustomDrinks.validate(tooMany, 250.0))
     }
 
     @Test
     fun `a bottle can be used only once`() {
-        assertEquals(1, CustomDrinks.validate(drink("vodka" to 40, "vodka" to 20), 250.0).size)
+        assertEquals(listOf(DrinkProblem.BottleRepeated), CustomDrinks.validate(drink("vodka" to 40, "vodka" to 20), 250.0))
     }
 
     @Test
     fun `every row needs a real bottle`() {
-        assertEquals(1, CustomDrinks.validate(drink("" to 40), 250.0).size)
+        assertEquals(listOf(DrinkProblem.BottleMissing), CustomDrinks.validate(drink("" to 40), 250.0))
     }
 
     @Test
     fun `each pour stays within the per-item bounds`() {
-        assertEquals(1, CustomDrinks.validate(drink("vodka" to 0), 250.0).size)
-        assertEquals(1, CustomDrinks.validate(drink("cola" to 151), 250.0).size)
-        assertEquals(emptyList<String>(), CustomDrinks.validate(drink("cola" to 150), 250.0))
+        val outOfRange = listOf(DrinkProblem.VolumeOutOfRange(CustomDrinks.MIN_ITEM_ML, 150))
+        assertEquals(outOfRange, CustomDrinks.validate(drink("vodka" to 0), 250.0))
+        assertEquals(outOfRange, CustomDrinks.validate(drink("cola" to 151), 250.0))
+        assertEquals(emptyList<DrinkProblem>(), CustomDrinks.validate(drink("cola" to 150), 250.0))
     }
 
     @Test
     fun `the total must fit the glass the machine reports`() {
         val big = drink("vodka" to 100, "cola" to 150)
-        assertEquals(emptyList<String>(), CustomDrinks.validate(big, 250.0))
-        assertEquals(1, CustomDrinks.validate(big, 200.0).size)
+        assertEquals(emptyList<DrinkProblem>(), CustomDrinks.validate(big, 250.0))
+        assertEquals(listOf(DrinkProblem.OverGlass(250, 200)), CustomDrinks.validate(big, 200.0))
     }
 
     // ------------------------------------------------------------------ availability
 
     @Test
-    fun `drinks are scored against the rack like any recipe`() {
+    fun `drinks are scored against the rack exactly like any recipe`() {
         val ready = drink("vodka" to 40, "cola" to 120, id = "custom-1")
         val oneShort = drink("vodka" to 40, "tonic_water" to 120, id = "custom-2")
         val twoShort = drink("gin" to 40, "tonic_water" to 120, id = "custom-3")
 
-        val scored = CustomDrinks.evaluate(listOf(ready, oneShort, twoShort), setOf("vodka", "cola"))
+        val scored = Availability.score(listOf(ready, oneShort, twoShort).map(CustomDrink::toCocktail), setOf("vodka", "cola"))
 
         assertEquals(listOf("custom-1", "custom-2"), scored.map { it.cocktail.id })
         assertTrue(scored[0].canMakeNow)
@@ -160,10 +165,10 @@ class CustomDrinksTest {
         val custom = drink("cola" to 120, "vodka" to 40, "lime_juice" to 15)
         val plan = buildPourPlan(custom.toCocktail(), listOf("vodka", "lime_juice", "cola", null), maxPourMl = 250.0)
 
-        assertEquals(listOf("cola", "vodka", "lime_juice"), plan.request.items.map { it.bottleId })
-        assertEquals(listOf(120.0, 40.0, 15.0), plan.request.items.map { it.ml })
-        assertEquals("custom-1", plan.request.drinkId)
-        assertEquals("Sunset Cooler", plan.request.drinkName)
+        assertEquals(listOf("cola", "vodka", "lime_juice"), plan.items.map { it.bottleId })
+        assertEquals(listOf(120.0, 40.0, 15.0), plan.items.map { it.ml })
+        assertEquals("custom-1", plan.drinkId)
+        assertEquals("Sunset Cooler", plan.drinkName)
         assertTrue(plan.warnings.isEmpty())
         assertTrue(plan.manualSteps.isEmpty())
     }
@@ -173,8 +178,8 @@ class CustomDrinksTest {
         val custom = drink("vodka" to 40, "tonic_water" to 120)
         val plan = buildPourPlan(custom.toCocktail(), listOf("vodka", null, null, null), maxPourMl = 250.0)
 
-        assertEquals(listOf("vodka"), plan.request.items.map { it.bottleId })
-        assertTrue(plan.warnings.any { it.contains("Tonic water") })
+        assertEquals(listOf("vodka"), plan.items.map { it.bottleId })
+        assertEquals(listOf(PlanWarning.NotLoaded("Tonic water")), plan.warnings)
     }
 
     @Test

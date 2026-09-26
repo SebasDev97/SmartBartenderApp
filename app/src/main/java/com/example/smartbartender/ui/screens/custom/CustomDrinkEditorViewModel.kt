@@ -1,25 +1,30 @@
 package com.example.smartbartender.ui.screens.custom
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.navigation.toRoute
 import com.example.smartbartender.data.hardware.BartenderMachine
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.CustomDrinkStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.di.appContainer
 import com.example.smartbartender.domain.model.BottleCatalog
-import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.CustomItem
 import com.example.smartbartender.domain.model.DEFAULT_MAX_POUR_ML
+import com.example.smartbartender.domain.model.DrinkProblem
 import com.example.smartbartender.domain.model.MAX_ITEM_ML
+import com.example.smartbartender.ui.navigation.CustomEditRoute
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -64,35 +69,47 @@ data class CustomDrinkEditorUiState(
 
     val totalMl: Int get() = draft.totalMl
 
-    val errors: List<String> = CustomDrinks.validate(draft, maxPourMl)
+    val problems: List<DrinkProblem> = CustomDrinks.validate(draft, maxPourMl)
 
-    val canSave: Boolean get() = errors.isEmpty() && !isSaving
+    val canSave: Boolean get() = problems.isEmpty() && !isSaving
 
     val canAddItem: Boolean get() = items.size < BottleCatalog.MAX_SLOTS
 
     val usedBottleIds: Set<String> = items.mapNotNullTo(HashSet()) { it.bottleId }
 }
 
+/** What the editor asks its host to do once it is done. */
+sealed interface EditorEvent {
+    /** [id] is the drink's, new or not; [wasNew] tells the host whether to open it or just go back. */
+    data class Saved(val id: String, val wasNew: Boolean) : EditorEvent
+
+    data object Deleted : EditorEvent
+}
+
 /** Creates a new custom drink, or edits the one whose id arrived as a navigation argument. */
 class CustomDrinkEditorViewModel(
     private val drinkId: String?,
-    private val preferences: BartenderPreferences,
-    private val machine: BartenderMachine,
+    private val customDrinks: CustomDrinkStore,
+    rack: RackStore,
+    machine: BartenderMachine,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CustomDrinkEditorUiState(isLoading = drinkId != null, isNew = drinkId == null))
     val uiState = _uiState.asStateFlow()
+
+    private val _events = Channel<EditorEvent>(Channel.BUFFERED)
+    val events: Flow<EditorEvent> = _events.receiveAsFlow()
 
     private var nextKey = 1
 
     init {
         if (drinkId != null) load(drinkId)
         viewModelScope.launch {
-            preferences.loadedBottleIds.collect { ids -> _uiState.update { it.copy(loadedBottleIds = ids) } }
+            rack.loadedBottleIds.collect { ids -> _uiState.update { it.copy(loadedBottleIds = ids) } }
         }
         viewModelScope.launch {
             machine.connection.collect { connection ->
-                val maxPourMl = (connection as? ConnectionState.Connected)?.snapshot?.maxPourMl ?: DEFAULT_MAX_POUR_ML
+                val maxPourMl = connection.snapshotOrNull?.maxPourMl ?: DEFAULT_MAX_POUR_ML
                 _uiState.update { it.copy(maxPourMl = maxPourMl) }
             }
         }
@@ -101,7 +118,7 @@ class CustomDrinkEditorViewModel(
     /** Read once: the form is the user's to change from here, not a mirror of storage. */
     private fun load(id: String) {
         viewModelScope.launch {
-            val drink = preferences.customDrinks.first().firstOrNull { it.id == id }
+            val drink = customDrinks.customDrinks.first().firstOrNull { it.id == id }
             if (drink == null) {
                 _uiState.update { it.copy(isLoading = false, notFound = true) }
                 return@launch
@@ -171,15 +188,14 @@ class CustomDrinkEditorViewModel(
         state.copy(items = state.items.map { if (it.key == key) transform(it) else it })
     }
 
-    /** Saves, then hands the drink's id back so the caller can show it. */
-    fun save(onSaved: (id: String) -> Unit) {
+    fun save() {
         val state = _uiState.value
         if (!state.canSave) return
         val id = drinkId ?: CustomDrinks.newId()
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            preferences.saveCustomDrink(state.draft.copy(id = id))
-            onSaved(id)
+            customDrinks.saveCustomDrink(state.draft.copy(id = id))
+            _events.send(EditorEvent.Saved(id, wasNew = drinkId == null))
         }
     }
 
@@ -187,26 +203,27 @@ class CustomDrinkEditorViewModel(
 
     fun dismissDelete() = _uiState.update { it.copy(showDeleteConfirm = false) }
 
-    fun confirmDelete(onDeleted: () -> Unit) {
+    fun confirmDelete() {
         val id = drinkId ?: return
         _uiState.update { it.copy(showDeleteConfirm = false, isSaving = true) }
         viewModelScope.launch {
-            preferences.deleteCustomDrink(id)
-            onDeleted()
+            customDrinks.deleteCustomDrink(id)
+            _events.send(EditorEvent.Deleted)
         }
     }
 
     companion object {
         private const val MAX_NAME_LENGTH = 40
 
-        /** [SavedStateHandle] carries the optional `drinkId` navigation argument. */
+        /** The optional drink id arrives as the [CustomEditRoute] navigation argument. */
         fun factory(): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                val handle: SavedStateHandle = createSavedStateHandle()
+                val container = appContainer
                 CustomDrinkEditorViewModel(
-                    drinkId = handle.get<String>("drinkId")?.takeIf { it.isNotBlank() },
-                    preferences = appContainer.preferences,
-                    machine = appContainer.machine,
+                    drinkId = createSavedStateHandle().toRoute<CustomEditRoute>().drinkId?.takeIf { it.isNotBlank() },
+                    customDrinks = container.customDrinks,
+                    rack = container.rack,
+                    machine = container.machine,
                 )
             }
         }

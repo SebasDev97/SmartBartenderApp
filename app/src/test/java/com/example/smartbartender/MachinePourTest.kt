@@ -1,20 +1,19 @@
 package com.example.smartbartender
 
 import com.example.smartbartender.data.hardware.BartenderMachine
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.ActiveJobStore
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CleaningRun
-import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.ConnectionState
-import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
+import com.example.smartbartender.domain.model.LedMode
 import com.example.smartbartender.domain.model.LedShow
-import com.example.smartbartender.domain.model.MachineAddress
+import com.example.smartbartender.domain.model.MachineBackend
 import com.example.smartbartender.domain.model.MachineRunState
 import com.example.smartbartender.domain.model.MachineSnapshot
+import com.example.smartbartender.domain.model.PourItem
 import com.example.smartbartender.domain.model.PourJob
-import com.example.smartbartender.domain.model.PourRecord
 import com.example.smartbartender.domain.model.PourRequest
 import com.example.smartbartender.domain.model.SensorReading
 import com.example.smartbartender.domain.model.StepKind
@@ -92,7 +91,7 @@ class MachinePourTest {
             jobs.value?.takeIf { it.jobId == jobId }?.let { Result.success(it) }
                 ?: Result.failure(IllegalStateException("No job $jobId"))
 
-        override suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit> {
+        override suspend fun setLed(enabled: Boolean): Result<Unit> {
             ledCommands += enabled
             return Result.success(Unit)
         }
@@ -103,27 +102,9 @@ class MachinePourTest {
         }
     }
 
-    private class FakePreferences(slots: List<String?>) : BartenderPreferences {
-        override val loadedBottleIds = MutableStateFlow(slots.filterNotNull().toSet())
-        override val slots = MutableStateFlow(slots)
-        override val ledShowEnabled = MutableStateFlow(true)
-        override val machineAddress = MutableStateFlow(MachineAddress("10.0.2.2", 8080, enabled = true))
+    private class FakeActiveJob : ActiveJobStore {
         override val activeJobId = MutableStateFlow<String?>(null)
-        override val favourites = MutableStateFlow<List<CocktailSummary>>(emptyList())
-        override val pourHistory = MutableStateFlow<List<PourRecord>>(emptyList())
-        override val customDrinks = MutableStateFlow<List<CustomDrink>>(emptyList())
-
-        override suspend fun setBottleLoaded(bottleId: String, loaded: Boolean) = false
-        override suspend fun setLoadedBottles(bottleIds: Set<String>) = Unit
-        override suspend fun setSlots(slots: List<String?>) = Unit
-        override suspend fun setLedShowEnabled(enabled: Boolean) = Unit
-        override suspend fun setMachineAddress(host: String, port: Int, enabled: Boolean) = Unit
         override suspend fun setActiveJobId(jobId: String?) { activeJobId.value = jobId }
-        override suspend fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) = Unit
-        override suspend fun recordPour(record: PourRecord) = Unit
-        override suspend fun clearPourHistory() = Unit
-        override suspend fun saveCustomDrink(drink: CustomDrink) = Unit
-        override suspend fun deleteCustomDrink(id: String) = Unit
     }
 
     // ------------------------------------------------------------------ tests
@@ -191,15 +172,15 @@ class MachinePourTest {
 
     @Test
     fun `a job left running is what lets the app re-attach after a restart`() = runTest {
-        val preferences = FakePreferences(listOf("tequila", "triple_sec", null, null))
+        val activeJob = FakeActiveJob()
         val machine = FakeMachine()
 
         machine.startPour(margaritaRequest("job-7"))
-        preferences.setActiveJobId("job-7")
+        activeJob.setActiveJobId("job-7")
         machine.push(JobStatus.RUNNING, stepIndex = 1, progress = 0.5f)
 
         // A cold start sees both halves: the id the app was following, and a live job.
-        val remembered = preferences.activeJobId.value
+        val remembered = activeJob.activeJobId.value
         val live = machine.currentJob.value
 
         assertEquals("job-7", remembered)
@@ -222,8 +203,8 @@ class MachinePourTest {
     @Test
     fun `switching the led show also commands the machine`() = runTest {
         val machine = FakeMachine()
-        machine.setLed(enabled = false, cycleMillis = 7000)
-        machine.setLed(enabled = true, cycleMillis = 7000)
+        machine.setLed(enabled = false)
+        machine.setLed(enabled = true)
 
         assertEquals(listOf(false, true), machine.ledCommands)
     }
@@ -235,12 +216,12 @@ private fun snapshot() = MachineSnapshot(
     machineId = "bartender-01",
     name = "Smart Bartender",
     firmware = "0.1.0",
-    backend = "simulated",
+    backend = MachineBackend.SIMULATED,
     state = MachineRunState.IDLE,
     pumpCount = 4,
     maxPourMl = 250.0,
     slots = emptyList(),
-    led = LedShow(enabled = true, mode = "spectrum", cycleMillis = 7000),
+    led = LedShow(enabled = true, mode = LedMode.SPECTRUM, cycleMillis = LedShow.CYCLE_MILLIS),
     currentJob = null,
     fault = null,
 )
@@ -274,8 +255,8 @@ private fun margaritaRequest(jobId: String) = PourRequest(
     drinkName = "Margarita",
     glass = "Cocktail glass",
     items = listOf(
-        com.example.smartbartender.domain.model.PourItem("tequila", "Tequila", 44.0),
-        com.example.smartbartender.domain.model.PourItem("triple_sec", "Triple sec", 15.0),
+        PourItem("tequila", "Tequila", 44.0),
+        PourItem("triple_sec", "Triple sec", 15.0),
     ),
     manualSteps = listOf("Salt the rim"),
 )

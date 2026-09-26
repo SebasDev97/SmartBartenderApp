@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * Slot order is the difference between pouring vodka and pouring gin, so it gets its own
  * tests. The interesting property is that a bottle keeps its slot when a *different* bottle
- * is ejected — and now that the assignment is persisted, that survives a restart.
+ * is ejected — and, because the assignment is persisted, that survives a restart.
  */
 class SlotRackTest {
 

@@ -5,7 +5,9 @@ import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.MachineFault
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.StepKind
-import com.example.smartbartender.ui.screens.detail.PreparationState
+import com.example.smartbartender.ui.screens.detail.PourFailure
+import com.example.smartbartender.ui.screens.detail.PourPhase
+import com.example.smartbartender.ui.screens.detail.StepVolume
 import com.example.smartbartender.ui.screens.detail.reducePour
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -42,66 +44,69 @@ class PourReducerTest {
         error = error,
     )
 
+    private fun pouring(phase: PourPhase): PourPhase.Pouring {
+        assertTrue("expected a live pour, got $phase", phase is PourPhase.Pouring)
+        return phase as PourPhase.Pouring
+    }
+
     @Test
     fun `a running job drives the overlay`() {
-        val state = reducePour(PreparationState(), job(JobStatus.RUNNING, stepIndex = 1, progress = 0.4f))
+        val state = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1, progress = 0.4f)))
 
-        assertTrue(state.isRunning)
-        assertFalse(state.isFinished)
         assertEquals(1, state.currentStepIndex)
         assertEquals("Pouring Tequila", state.currentStep?.label)
     }
 
     @Test
     fun `the machine's progress wins over the step-count fallback`() {
-        val state = reducePour(PreparationState(), job(JobStatus.RUNNING, stepIndex = 0, progress = 0.62f))
+        val state = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 0, progress = 0.62f)))
         // Step 0 of 4 would be 0.25 by counting; the machine measured 0.62.
         assertEquals(0.62f, state.progress, 0.001f)
     }
 
     @Test
+    fun `before the machine answers, nothing is claimed to have poured`() {
+        val starting = PourPhase.Pouring.starting("job-1")
+
+        assertEquals(0f, starting.progress, 0.001f)
+        assertTrue(starting.waitingForGlass)
+    }
+
+    @Test
     fun `a pour step shows how much has actually gone in`() {
-        val state = reducePour(PreparationState(), job(JobStatus.RUNNING, stepIndex = 1))
-        assertEquals("22 / 44 ml", state.steps[1].detail)
+        val state = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1)))
+        assertEquals(StepVolume(dispensedMl = 22.0, plannedMl = 44.0, measured = false), state.steps[1].volume)
+        assertNull(state.steps[0].volume)
     }
 
     @Test
     fun `manual steps are marked so the overlay can say who does them`() {
-        val state = reducePour(PreparationState(), job(JobStatus.RUNNING))
+        val state = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING)))
         assertTrue(state.steps[2].isManual)
         assertFalse(state.steps[1].isManual)
     }
 
     @Test
-    fun `finishing fills the bar and stops the run`() {
-        val state = reducePour(PreparationState(), job(JobStatus.FINISHED, stepIndex = 3, progress = 1f))
-
-        assertFalse(state.isRunning)
-        assertTrue(state.isFinished)
-        assertEquals(1f, state.progress, 0.001f)
-        assertNull(state.errorMessage)
+    fun `finishing ends the pour`() {
+        val state = reducePour(PourPhase.Idle, job(JobStatus.FINISHED, stepIndex = 3, progress = 1f))
+        assertEquals(PourPhase.Finished("job-1"), state)
     }
 
     @Test
     fun `aborting is shown while it happens, and is not reported as an error`() {
-        val aborting = reducePour(PreparationState(), job(JobStatus.ABORTING, stepIndex = 1))
-        assertTrue(aborting.isAborting)
-        assertTrue(aborting.isRunning)
+        val aborting = pouring(reducePour(PourPhase.Idle, job(JobStatus.ABORTING, stepIndex = 1)))
+        assertTrue(aborting.aborting)
 
-        val aborted = reducePour(aborting, job(JobStatus.ABORTED, stepIndex = 1))
-        assertFalse(aborted.isRunning)
-        assertFalse(aborted.isFinished)
         // The user asked for this. Nothing to apologise for.
-        assertNull(aborted.errorMessage)
+        assertEquals(PourPhase.Idle, reducePour(aborting, job(JobStatus.ABORTED, stepIndex = 1)))
     }
 
     @Test
     fun `a failure surfaces the machine's own words`() {
         val fault = MachineFault("PUMP_FAULT", "Pump 2 did not reach target", recoverable = false)
-        val state = reducePour(PreparationState(), job(JobStatus.FAILED, error = fault))
+        val state = reducePour(PourPhase.Idle, job(JobStatus.FAILED, error = fault))
 
-        assertFalse(state.isRunning)
-        assertEquals("Pump 2 did not reach target", state.errorMessage)
+        assertEquals(PourPhase.Failed(PourFailure.Faulted("Pump 2 did not reach target")), state)
     }
 
     @Test
@@ -113,32 +118,36 @@ class PourReducerTest {
             job(JobStatus.RUNNING, stepIndex = 3, progress = 0.95f),
             job(JobStatus.FINISHED, stepIndex = 3, progress = 1f),
         )
-        val end = sequence.fold(PreparationState()) { state, next -> reducePour(state, next) }
+        val end = sequence.fold<PourJob, PourPhase>(PourPhase.Idle) { state, next -> reducePour(state, next) }
 
-        assertTrue(end.isFinished)
-        assertEquals("job-1", end.jobId)
-        assertEquals(1f, end.progress, 0.001f)
+        assertEquals(PourPhase.Finished("job-1"), end)
     }
 
     @Test
     fun `an out-of-range step index from the machine cannot crash the screen`() {
-        val state = reducePour(PreparationState(), job(JobStatus.RUNNING, stepIndex = 99))
+        val state = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 99)))
         assertEquals(3, state.currentStepIndex)
     }
 
     @Test
+    fun `a status this build does not know keeps the pour on screen`() {
+        val running = reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1))
+        assertEquals(running, reducePour(running, job(JobStatus.UNKNOWN, stepIndex = 2)))
+    }
+
+    @Test
     fun `waiting for a glass is shown until the machine sees one`() {
-        val waiting = reducePour(PreparationState(), job(JobStatus.RUNNING).copy(waitingForGlass = true))
+        val waiting = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING).copy(waitingForGlass = true)))
         assertTrue(waiting.waitingForGlass)
 
-        val detected = reducePour(waiting, job(JobStatus.RUNNING, stepIndex = 1, progress = 0.1f))
+        val detected = pouring(reducePour(waiting, job(JobStatus.RUNNING, stepIndex = 1, progress = 0.1f)))
         assertFalse(detected.waitingForGlass)
     }
 
     @Test
     fun `an aborted wait for a glass is not still waiting`() {
-        val state = reducePour(PreparationState(), job(JobStatus.ABORTED).copy(waitingForGlass = true))
-        assertFalse(state.waitingForGlass)
+        val state = reducePour(PourPhase.Idle, job(JobStatus.ABORTED).copy(waitingForGlass = true))
+        assertEquals(PourPhase.Idle, state)
     }
 
     @Test
@@ -146,7 +155,14 @@ class PourReducerTest {
         val measured = job(JobStatus.RUNNING, stepIndex = 1).let { j ->
             j.copy(steps = j.steps.map { if (it.kind == StepKind.POUR) it.copy(dispensedMl = 41.6, measured = true) else it })
         }
-        val state = reducePour(PreparationState(), measured)
-        assertEquals("41 / 44 ml · measured", state.steps[1].detail)
+        val state = pouring(reducePour(PourPhase.Idle, measured))
+        assertEquals(StepVolume(dispensedMl = 41.6, plannedMl = 44.0, measured = true), state.steps[1].volume)
+    }
+
+    @Test
+    fun `a job without steps keeps the steps already shown`() {
+        val running = pouring(reducePour(PourPhase.Idle, job(JobStatus.RUNNING, stepIndex = 1)))
+        val stepless = pouring(reducePour(running, job(JobStatus.RUNNING, stepIndex = 1).copy(steps = emptyList())))
+        assertEquals(running.steps, stepless.steps)
     }
 }
