@@ -36,22 +36,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.Bottle
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.ui.components.GlassPanel
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.SectionHeader
+import com.example.smartbartender.ui.components.label
 import com.example.smartbartender.ui.theme.NeonAmber
-import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
 
 /**
- * Inventory screen for the machine's four bottle slots. Every toggle is persisted
- * immediately, so the rack survives an app restart.
+ * Inventory screen for the machine's bottle slots. Every toggle is persisted immediately,
+ * so the rack survives an app restart.
  */
 @Composable
 fun BottlesScreen(
@@ -64,7 +66,7 @@ fun BottlesScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
+    val accent = led.primary
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -79,14 +81,13 @@ fun BottlesScreen(
         item {
             Column {
                 Text(
-                    text = "Bottle rack",
+                    text = stringResource(R.string.bottles_title),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "The machine holds ${BottleCatalog.MAX_SLOTS} bottles at a time — " +
-                        "${state.loadedCount} of ${BottleCatalog.MAX_SLOTS} slots filled.",
+                    text = stringResource(R.string.bottles_summary, BottleCatalog.MAX_SLOTS, state.loadedCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
@@ -95,12 +96,12 @@ fun BottlesScreen(
                 SlotRack(slots = state.slots, accent = accent, onEjectSlot = onEjectSlot)
 
                 AnimatedVisibility(
-                    visible = state.notice != null,
+                    visible = state.showRackFullNotice,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                 ) {
                     Text(
-                        text = state.notice.orEmpty(),
+                        text = stringResource(R.string.bottles_rack_full_notice, BottleCatalog.MAX_SLOTS),
                         style = MaterialTheme.typography.labelLarge,
                         color = NeonAmber,
                         modifier = Modifier.padding(top = 12.dp),
@@ -108,17 +109,19 @@ fun BottlesScreen(
                 }
 
                 Row {
-                    TextButton(onClick = onLoadDefaults) { Text("Load starter rack") }
+                    TextButton(onClick = onLoadDefaults) { Text(stringResource(R.string.bottles_load_starter)) }
                     Spacer(Modifier.width(4.dp))
-                    TextButton(onClick = onEjectAll, enabled = state.loadedCount > 0) { Text("Eject all") }
+                    TextButton(onClick = onEjectAll, enabled = state.loadedCount > 0) {
+                        Text(stringResource(R.string.bottles_eject_all))
+                    }
                 }
             }
         }
 
-        state.sections.forEach { (category, bottles) ->
+        BottleCatalog.byCategory.forEach { (category, bottles) ->
             item(key = "header-${category.name}") {
                 SectionHeader(
-                    title = category.label,
+                    title = category.label(),
                     trailing = "${bottles.count { state.isLoaded(it) }}/${bottles.size}",
                     accent = accent,
                     modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
@@ -165,7 +168,7 @@ private fun SlotRack(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = "SLOT ${index + 1}",
+                        text = stringResource(R.string.bottles_slot, index + 1),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (filled) accent else TextSecondary,
                     )
@@ -179,7 +182,7 @@ private fun SlotRack(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = bottle?.displayName ?: "Empty",
+                        text = bottle?.displayName ?: stringResource(R.string.bottles_slot_empty),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (filled) MaterialTheme.colorScheme.onSurface else TextSecondary,
                         maxLines = 2,
@@ -242,11 +245,13 @@ private fun BottleRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = when {
-                        loaded -> "Loaded — tap to eject"
-                        blocked -> "Rack full"
-                        else -> "Tap to load"
-                    },
+                    text = stringResource(
+                        when {
+                            loaded -> R.string.bottles_loaded_hint
+                            blocked -> R.string.bottles_rack_full
+                            else -> R.string.bottles_load_hint
+                        },
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = when {
                         loaded -> accent
@@ -258,7 +263,7 @@ private fun BottleRow(
             if (loaded) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Eject ${bottle.displayName}",
+                    contentDescription = stringResource(R.string.bottles_eject, bottle.displayName),
                     tint = TextSecondary,
                     modifier = Modifier.size(18.dp),
                 )

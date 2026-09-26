@@ -70,11 +70,15 @@ object BottleCatalog {
         "sugar", "powdered sugar", "brown sugar", "salt", "pepper", "black pepper",
         "nutmeg", "cinnamon", "mint", "cherry", "maraschino cherry", "olive", "celery salt",
         "egg white", "hot sauce", "worcestershire sauce", "honey", "vanilla extract",
-    ).map { it.normalizedIngredient() }.toSet()
+    ).map { it.folded() }.toSet()
+
+    /** The catalog grouped for display, in [BottleCategory] order. */
+    val byCategory: Map<BottleCategory, List<Bottle>> =
+        BottleCategory.entries.associateWith { category -> bottles.filter { it.category == category } }
 
     private val byMatchName: Map<String, Bottle> = buildMap {
         bottles.forEach { bottle ->
-            bottle.matchNames.forEach { name -> putIfAbsent(name.normalizedIngredient(), bottle) }
+            bottle.matchNames.forEach { name -> putIfAbsent(name.folded(), bottle) }
         }
     }
 
@@ -92,19 +96,9 @@ object BottleCatalog {
         else inSlotOrder(bottleIds).take(MAX_SLOTS).map { it.id }.toSet()
 
     /** Resolves a recipe ingredient name (any spelling) to the bottle that can pour it. */
-    fun resolveBottle(recipeIngredient: String): Bottle? = byMatchName[recipeIngredient.normalizedIngredient()]
+    fun resolveBottle(recipeIngredient: String): Bottle? = byMatchName[recipeIngredient.folded()]
 
     fun isPantryStaple(recipeIngredient: String): Boolean =
-        recipeIngredient.normalizedIngredient() in pantryStaples
+        recipeIngredient.folded() in pantryStaples
 }
 
-/**
- * Case/accent/punctuation insensitive form used for all ingredient comparisons.
- * Diacritics are folded first, so "Curaçao" and "Curacao" are the same liquid.
- */
-fun String.normalizedIngredient(): String =
-    java.text.Normalizer.normalize(trim().lowercase(), java.text.Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-        .replace(Regex("[^a-z0-9 ]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()

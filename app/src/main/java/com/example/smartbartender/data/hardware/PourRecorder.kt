@@ -1,6 +1,8 @@
 package com.example.smartbartender.data.hardware
 
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.ActiveJobStore
+import com.example.smartbartender.data.local.PourHistoryStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.domain.model.MachineSlot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRecord
@@ -24,16 +26,18 @@ import kotlinx.coroutines.flow.onEach
  */
 class PourRecorder(
     private val machine: BartenderMachine,
-    private val preferences: BartenderPreferences,
-    scope: CoroutineScope,
+    private val activeJob: ActiveJobStore,
+    private val history: PourHistoryStore,
+    private val rack: RackStore,
+    private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
-    init {
+    fun start() {
         machine.currentJob
             .filterNotNull()
             .filter { it.status.isTerminal }
-            .onEach { job -> if (job.jobId == preferences.activeJobId.first()) record(job) }
+            .onEach { job -> if (job.jobId == activeJob.activeJobId.first()) record(job) }
             .launchIn(scope)
 
         // The app may have been killed mid-pour and missed the final frame. The machine
@@ -47,8 +51,8 @@ class PourRecorder(
     }
 
     private suspend fun catchUp() {
-        val jobId = preferences.activeJobId.first() ?: return
-        if (preferences.pourHistory.first().any { it.jobId == jobId }) return
+        val jobId = activeJob.activeJobId.first() ?: return
+        if (history.pourHistory.first().any { it.jobId == jobId }) return
         machine.fetchJob(jobId).onSuccess { job -> if (job.status.isTerminal) record(job) }
     }
 
@@ -56,8 +60,8 @@ class PourRecorder(
         val slots = machine.connection.value.snapshotOrNull?.slots
             ?.takeIf { it.isNotEmpty() }
             ?.inPumpOrder()
-            ?: preferences.slots.first()
-        PourRecord.from(job, slots, clock())?.let { preferences.recordPour(it) }
+            ?: rack.slots.first()
+        PourRecord.from(job, slots, clock())?.let { history.recordPour(it) }
     }
 }
 

@@ -3,6 +3,7 @@ package com.example.smartbartender.data.hardware
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.domain.model.MachineException
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The bartender machine, as the rest of the app sees it.
+ *
+ * Every command returns a [Result] whose failure is a [MachineException], so callers read
+ * the typed reason with `toMachineError()` rather than parsing a message.
  *
  * An interface rather than a class so tests can drive a fake through a scripted pour without
  * a socket — see `MachinePourTest`.
@@ -35,7 +39,8 @@ interface BartenderMachine {
     /** A job the machine still remembers (it keeps the last 20), finished or not. */
     suspend fun fetchJob(jobId: String): Result<PourJob>
 
-    suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit>
+    /** Turns the strip's spectrum cycle on, in phase with the phone's preview, or turns it off. */
+    suspend fun setLed(enabled: Boolean): Result<Unit>
 
     /** Runs one pump for [seconds] — to prime its tube, or to hear the relay click. */
     suspend fun jog(pump: Int, seconds: Double): Result<Unit>

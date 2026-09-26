@@ -32,41 +32,51 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
+import com.example.smartbartender.ui.common.text
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.ledColorAt
+import com.example.smartbartender.ui.theme.ErrorRed
 import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
 
 /**
- * Full-screen simulation of the machine pouring. When the LED show is on, the whole panel
- * is washed in the cycling strip colour; when it is off the same animation runs in the
- * machine's neutral cyan.
+ * Full-screen view of the machine pouring, for every [PourPhase] but [PourPhase.Idle]. When
+ * the LED show is on, the whole panel is washed in the cycling strip colour; when it is off
+ * the same animation runs in the machine's neutral cyan.
  */
 @Composable
 fun PreparationOverlay(
     cocktailName: String,
-    preparation: PreparationState,
+    pour: PourPhase,
     led: LedState,
     onCancel: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val accent by animateColorAsState(
-        targetValue = if (led.enabled) led.primary else NeonCyan,
+        targetValue = if (pour is PourPhase.Failed) ErrorRed else led.primary,
         animationSpec = tween(600),
         label = "prepAccent",
     )
     val secondary = if (led.enabled) led.secondary else NeonCyan.copy(alpha = 0.4f)
     val progress by animateFloatAsState(
-        targetValue = preparation.progress,
+        targetValue = when (pour) {
+            is PourPhase.Pouring -> pour.progress
+            is PourPhase.Finished -> 1f
+            PourPhase.Idle, is PourPhase.Failed -> 0f
+        },
         animationSpec = tween(durationMillis = 700),
         label = "prepProgress",
     )
+    val waitingForGlass = (pour as? PourPhase.Pouring)?.waitingForGlass == true
 
     Box(
         modifier = modifier
@@ -103,33 +113,29 @@ fun PreparationOverlay(
                 accent = accent,
                 secondary = secondary,
                 led = led,
-                waitingForGlass = preparation.waitingForGlass,
+                waitingForGlass = waitingForGlass,
             )
 
             Spacer(Modifier.height(32.dp))
             Text(
-                text = if (preparation.isFinished) "Ready" else cocktailName,
+                text = when (pour) {
+                    is PourPhase.Finished -> stringResource(R.string.pour_ready)
+                    is PourPhase.Failed -> stringResource(R.string.pour_failed_title)
+                    else -> cocktailName
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = when {
-                    preparation.isFinished -> "$cocktailName is served. Enjoy."
-                    preparation.waitingForGlass -> "Place a glass under the nozzle"
-                    else -> preparation.currentStep?.label.orEmpty()
-                },
+                text = headline(pour, cocktailName),
                 style = MaterialTheme.typography.bodyLarge,
                 color = accent,
                 textAlign = TextAlign.Center,
             )
-            val detail = if (preparation.waitingForGlass) {
-                "Pouring starts as soon as the machine sees an empty glass"
-            } else {
-                preparation.currentStep?.detail
-            }
-            if (!preparation.isFinished && !detail.isNullOrBlank()) {
+            val detail = (pour as? PourPhase.Pouring)?.let { detail(it) }
+            if (!detail.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = detail,
@@ -139,33 +145,72 @@ fun PreparationOverlay(
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
-            ProgressTrack(progress = progress, accent = accent, secondary = secondary, led = led)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "${(progress * 100).toInt()}%",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
-            )
+            if (pour !is PourPhase.Failed) {
+                Spacer(Modifier.height(28.dp))
+                ProgressTrack(progress = progress, accent = accent, secondary = secondary, led = led)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.pour_percent, (progress * 100).toInt()),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary,
+                )
+            }
 
             Spacer(Modifier.height(36.dp))
-            if (preparation.isFinished) {
-                Button(
+            when (pour) {
+                is PourPhase.Pouring -> if (pour.aborting) {
+                    Text(stringResource(R.string.pour_stopping), color = TextSecondary)
+                } else {
+                    TextButton(onClick = onCancel) {
+                        Text(stringResource(R.string.pour_abort), color = TextSecondary)
+                    }
+                }
+
+                is PourPhase.Finished -> Button(
                     onClick = onDone,
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Icon(Icons.Filled.Check, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text("Take glass")
+                    Text(stringResource(R.string.pour_take_glass))
                 }
-            } else {
-                TextButton(onClick = onCancel) {
-                    Text("Abort pour", color = TextSecondary)
+
+                is PourPhase.Failed -> TextButton(onClick = onDone) {
+                    Text(stringResource(R.string.pour_dismiss), color = MaterialTheme.colorScheme.onSurface)
                 }
+
+                PourPhase.Idle -> Unit
             }
         }
     }
+}
+
+@Composable
+private fun headline(pour: PourPhase, cocktailName: String): String = when (pour) {
+    is PourPhase.Pouring -> when {
+        pour.waitingForGlass -> stringResource(R.string.pour_place_glass)
+        else -> pour.currentStep?.label.orEmpty()
+    }
+
+    is PourPhase.Finished -> stringResource(R.string.pour_served, cocktailName)
+
+    is PourPhase.Failed -> when (val failure = pour.failure) {
+        PourFailure.NothingPourable -> stringResource(R.string.pour_nothing_pourable)
+        is PourFailure.Refused -> failure.error.text()
+        is PourFailure.Faulted -> failure.message ?: stringResource(R.string.pour_stopped_unexpectedly)
+    }
+
+    PourPhase.Idle -> ""
+}
+
+@Composable
+private fun detail(pour: PourPhase.Pouring): String? {
+    if (pour.waitingForGlass) return stringResource(R.string.pour_waiting_detail)
+    val step = pour.currentStep ?: return null
+    val volume = step.volume ?: return step.detail
+    val poured = stringResource(R.string.pour_step_volume, volume.dispensedMl.toInt(), volume.plannedMl.toInt())
+    return if (volume.measured) stringResource(R.string.pour_step_measured, poured) else poured
 }
 
 /** A glass filling up, rendered with the LED colour of the moment. */
@@ -195,7 +240,7 @@ private fun PourVisual(
                     drawCircle(
                         brush = Brush.sweepGradient(ringColors),
                         radius = size.minDimension / 2f,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 6f),
+                        style = Stroke(width = 6f),
                     )
                 },
         )
@@ -217,7 +262,7 @@ private fun PourVisual(
             if (waitingForGlass) {
                 Icon(
                     imageVector = Icons.Filled.LocalBar,
-                    contentDescription = "Waiting for a glass",
+                    contentDescription = stringResource(R.string.pour_waiting_for_glass),
                     tint = accent,
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -249,13 +294,7 @@ private fun ProgressTrack(
                 .fillMaxWidth(progress.coerceIn(0f, 1f))
                 .height(6.dp)
                 .clip(RoundedCornerShape(50))
-                .background(
-                    if (led.enabled) {
-                        Brush.horizontalGradient(listOf(accent, secondary))
-                    } else {
-                        Brush.horizontalGradient(listOf(accent, accent))
-                    },
-                ),
+                .background(Brush.horizontalGradient(listOf(accent, if (led.enabled) secondary else accent))),
         )
     }
 }

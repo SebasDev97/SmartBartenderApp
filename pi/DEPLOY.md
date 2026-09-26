@@ -34,28 +34,15 @@ hostname -I
 
 ## Step 1 — Copy the service across
 
-Two options. Either is fine.
-
-**Option A — clone the repo on the Pi** (easiest to update later):
+** Clone the repo on the Pi**
 
 ```bash
 sudo apt update && sudo apt install -y git python3-venv
-git clone <your-repo-url> ~/SmartBartender
+git clone https://github.com/SebasDev97/SmartBartenderApp.git ~/SmartBartender
 cd ~/SmartBartender/pi
 ```
 
 A clone only carries what is committed and pushed — commit your latest changes first.
-
-**Option B — copy the folder from your computer:**
-
-```bash
-# run this on your Mac, not on the Pi
-rsync -av --exclude '.venv' --exclude '__pycache__' --exclude '.pytest_cache' \
-  ~/AndroidStudioProjects/SmartBartender/pi/ <user>@raspberrypi.local:~/SmartBartender/pi/
-```
-
-Keep the `--exclude '.venv'`. A venv built on the Mac points at the Mac's Python and cannot
-run on the Pi; step 2 builds one on the Pi itself.
 
 ---
 
@@ -247,10 +234,9 @@ sudo systemctl stop bartender
 journalctl -u bartender -n 50        # recent log
 journalctl -u bartender -f           # follow live
 
-# update after a code change — option A (clone), on the Pi:
+# update after a code change 
+# on the Pi:
 cd ~/SmartBartender && git pull && sudo systemctl restart bartender
-# option B (copy): re-run the rsync from step 1 on your Mac, then on the Pi:
-sudo systemctl restart bartender
 # either way, if requirements.txt changed: .venv/bin/pip install -r requirements.txt
 ```
 

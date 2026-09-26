@@ -15,13 +15,16 @@ data class CocktailSummary(
     val look: DrinkLook? = null,
 )
 
+/** TheCocktailDB's `strAlcoholic`. */
+enum class AlcoholContent { ALCOHOLIC, NON_ALCOHOLIC, OPTIONAL }
+
 /** Full recipe as returned by lookup.php / search.php. */
 data class Cocktail(
     val id: String,
     val name: String,
     val thumbUrl: String?,
     val category: String?,
-    val alcoholic: String?,
+    val alcohol: AlcoholContent?,
     val glass: String?,
     val instructions: String?,
     val ingredients: List<RecipeIngredient>,

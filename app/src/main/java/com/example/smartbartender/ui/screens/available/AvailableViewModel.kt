@@ -2,14 +2,19 @@ package com.example.smartbartender.ui.screens.available
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.CustomDrinkStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
+import com.example.smartbartender.domain.model.Availability
 import com.example.smartbartender.domain.model.Bottle
 import com.example.smartbartender.domain.model.BottleCatalog
-import com.example.smartbartender.domain.model.CustomDrinks
+import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.MakeableCocktail
-import kotlinx.coroutines.CancellationException
+import com.example.smartbartender.domain.model.toCocktail
+import com.example.smartbartender.ui.common.LoadError
+import com.example.smartbartender.ui.common.toLoadError
+import com.example.smartbartender.util.runCatchingCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +32,7 @@ data class AvailableUiState(
     val recipes: List<MakeableCocktail> = emptyList(),
     /** The user's own drinks, scored on the phone. Kept apart so an edit never refetches. */
     val customDrinks: List<MakeableCocktail> = emptyList(),
-    val errorMessage: String? = null,
+    val loadError: LoadError? = null,
 ) {
     /** The user's own drinks lead each section; they are the ones they came back for. */
     val canMakeNow: List<MakeableCocktail> =
@@ -46,7 +51,8 @@ data class AvailableUiState(
  */
 class AvailableViewModel(
     private val repository: CocktailRepository,
-    preferences: BartenderPreferences,
+    rack: RackStore,
+    customDrinks: CustomDrinkStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AvailableUiState())
@@ -56,15 +62,15 @@ class AvailableViewModel(
 
     init {
         viewModelScope.launch {
-            preferences.loadedBottleIds.distinctUntilChanged().collect { ids ->
+            rack.loadedBottleIds.distinctUntilChanged().collect { ids ->
                 val bottles = ids.mapNotNull(BottleCatalog::byId)
                 _uiState.update { it.copy(loadedBottles = bottles, inventoryKnown = true) }
                 load(bottles)
             }
         }
         viewModelScope.launch {
-            combine(preferences.customDrinks, preferences.loadedBottleIds) { drinks, ids ->
-                CustomDrinks.evaluate(drinks, ids)
+            combine(customDrinks.customDrinks, rack.loadedBottleIds) { drinks, ids ->
+                Availability.score(drinks.map(CustomDrink::toCocktail), ids)
             }.collect { scored -> _uiState.update { it.copy(customDrinks = scored) } }
         }
     }
@@ -74,55 +80,26 @@ class AvailableViewModel(
     private fun load(bottles: List<Bottle>) {
         loadJob?.cancel()
         if (bottles.isEmpty()) {
-            _uiState.update {
-                it.copy(isLoading = false, recipes = emptyList(), errorMessage = null)
-            }
+            _uiState.update { it.copy(isLoading = false, recipes = emptyList(), loadError = null) }
             return
         }
         loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, loadError = null) }
             runCatchingCancellable { repository.findMakeable(bottles) }
                 .onSuccess { result ->
                     _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            recipes = result.canMakeNow + result.almost,
-                            errorMessage = null,
-                        )
+                        it.copy(isLoading = false, recipes = result.canMakeNow + result.almost, loadError = null)
                     }
                 }
                 .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = throwable.userMessage(),
-                        )
-                    }
+                    _uiState.update { it.copy(isLoading = false, loadError = throwable.toLoadError()) }
                 }
         }
     }
 
     companion object {
         val Factory = containerViewModelFactory { container ->
-            AvailableViewModel(container.repository, container.preferences)
+            AvailableViewModel(container.repository, container.rack, container.customDrinks)
         }
     }
-}
-
-/**
- * [runCatching] that lets cancellation through. A load that was cancelled because a newer
- * one started must not report a failure: its state update is not itself cancellable, so the
- * error would land after the replacement has already cleared it and strand the screen.
- */
-inline fun <T> runCatchingCancellable(block: () -> T): Result<T> {
-    val result = runCatching(block)
-    (result.exceptionOrNull() as? CancellationException)?.let { throw it }
-    return result
-}
-
-/** Turns any failure into something a guest standing at the machine can act on. */
-fun Throwable.userMessage(): String = when (this) {
-    is java.net.UnknownHostException -> "No internet connection. Check your network and try again."
-    is java.net.SocketTimeoutException -> "TheCocktailDB took too long to answer."
-    else -> message?.takeIf { it.isNotBlank() } ?: "Something went wrong while contacting TheCocktailDB."
 }

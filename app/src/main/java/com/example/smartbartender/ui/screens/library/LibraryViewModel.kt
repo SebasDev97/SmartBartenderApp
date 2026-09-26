@@ -2,20 +2,25 @@ package com.example.smartbartender.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.CustomDrinkStore
+import com.example.smartbartender.data.local.FavouritesStore
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.CustomDrink
 import com.example.smartbartender.domain.model.CustomDrinks
-import com.example.smartbartender.domain.model.Favourites
+import com.example.smartbartender.domain.model.filterByName
 import com.example.smartbartender.domain.model.toCocktail
-import com.example.smartbartender.ui.screens.available.runCatchingCancellable
-import com.example.smartbartender.ui.screens.available.userMessage
+import com.example.smartbartender.ui.common.LoadError
+import com.example.smartbartender.ui.common.toLoadError
+import com.example.smartbartender.util.runCatchingCancellable
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
@@ -23,11 +28,16 @@ import kotlin.time.Duration.Companion.milliseconds
 /** Which slice of drinks the Library shows. */
 enum class LibraryFilter { ALL, FAVOURITES, MINE }
 
+/** Something the Library asks its host to do once, rather than a state to render. */
+sealed interface LibraryEvent {
+    data class OpenCocktail(val id: String) : LibraryEvent
+}
+
 data class LibraryUiState(
     val query: String = "",
     val isLoading: Boolean = true,
     val results: List<CocktailSummary> = emptyList(),
-    val errorMessage: String? = null,
+    val loadError: LoadError? = null,
     val favourites: List<CocktailSummary> = emptyList(),
     val customDrinks: List<CustomDrink> = emptyList(),
     val filter: LibraryFilter = LibraryFilter.ALL,
@@ -49,9 +59,9 @@ data class LibraryUiState(
     }
 
     /** Favourites and custom drinks are searched locally, so those views never wait on the network. */
-    val visibleFavourites: List<CocktailSummary> = Favourites.filter(resolvedFavourites, query)
+    val visibleFavourites: List<CocktailSummary> = resolvedFavourites.filterByName(query) { it.name }
 
-    val visibleMyDrinks: List<CocktailSummary> = Favourites.filter(myDrinks, query)
+    val visibleMyDrinks: List<CocktailSummary> = myDrinks.filterByName(query) { it.name }
 
     val favouriteCount: Int get() = resolvedFavourites.size
 }
@@ -62,32 +72,32 @@ data class LibraryUiState(
  */
 class LibraryViewModel(
     private val repository: CocktailRepository,
-    private val preferences: BartenderPreferences,
+    private val favourites: FavouritesStore,
+    customDrinks: CustomDrinkStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState = _uiState.asStateFlow()
+
+    private val _events = Channel<LibraryEvent>(Channel.BUFFERED)
+    val events: Flow<LibraryEvent> = _events.receiveAsFlow()
 
     private var searchJob: Job? = null
 
     init {
         browse()
         viewModelScope.launch {
-            preferences.favourites.collect { favourites ->
-                _uiState.update { it.copy(favourites = favourites) }
-            }
+            favourites.favourites.collect { list -> _uiState.update { it.copy(favourites = list) } }
         }
         viewModelScope.launch {
-            preferences.customDrinks.collect { drinks ->
-                _uiState.update { it.copy(customDrinks = drinks) }
-            }
+            customDrinks.customDrinks.collect { drinks -> _uiState.update { it.copy(customDrinks = drinks) } }
         }
     }
 
     fun setFilter(filter: LibraryFilter) = _uiState.update { it.copy(filter = filter) }
 
     fun setFavourite(cocktail: CocktailSummary, favourite: Boolean) {
-        viewModelScope.launch { preferences.setFavourite(cocktail, favourite) }
+        viewModelScope.launch { favourites.setFavourite(cocktail, favourite) }
     }
 
     fun onQueryChange(query: String) {
@@ -99,15 +109,13 @@ class LibraryViewModel(
         }
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MILLIS.milliseconds)
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, loadError = null) }
             runCatchingCancellable { repository.searchByName(query.trim()) }
                 .onSuccess { drinks ->
-                    _uiState.update {
-                        it.copy(isLoading = false, results = drinks.map { drink -> drink.summary })
-                    }
+                    _uiState.update { it.copy(isLoading = false, results = drinks.map { drink -> drink.summary }) }
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, errorMessage = throwable.userMessage()) }
+                    _uiState.update { it.copy(isLoading = false, loadError = throwable.toLoadError()) }
                 }
         }
     }
@@ -116,29 +124,25 @@ class LibraryViewModel(
 
     fun retry() = if (_uiState.value.query.isBlank()) browse() else onQueryChange(_uiState.value.query)
 
-    /** Picks a random drink and hands its id back so the caller can navigate to it. */
-    fun surpriseMe(onPicked: (String) -> Unit) {
+    /** Picks a random drink and asks the host to open it. */
+    fun surpriseMe() {
         viewModelScope.launch {
             runCatching { repository.randomCocktail() }
-                .onSuccess { onPicked(it.id) }
-                .onFailure { throwable ->
-                    _uiState.update { it.copy(errorMessage = throwable.userMessage()) }
-                }
+                .onSuccess { _events.send(LibraryEvent.OpenCocktail(it.id)) }
+                .onFailure { throwable -> _uiState.update { it.copy(loadError = throwable.toLoadError()) } }
         }
     }
 
     private fun browse() {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, loadError = null) }
             runCatchingCancellable { repository.browse() }
                 .onSuccess { drinks ->
-                    _uiState.update {
-                        it.copy(isLoading = false, results = drinks.map { drink -> drink.summary })
-                    }
+                    _uiState.update { it.copy(isLoading = false, results = drinks.map { drink -> drink.summary }) }
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, errorMessage = throwable.userMessage()) }
+                    _uiState.update { it.copy(isLoading = false, loadError = throwable.toLoadError()) }
                 }
         }
     }
@@ -147,7 +151,7 @@ class LibraryViewModel(
         private const val SEARCH_DEBOUNCE_MILLIS = 350L
 
         val Factory = containerViewModelFactory { container ->
-            LibraryViewModel(container.repository, container.preferences)
+            LibraryViewModel(container.repository, container.favourites, container.customDrinks)
         }
     }
 }

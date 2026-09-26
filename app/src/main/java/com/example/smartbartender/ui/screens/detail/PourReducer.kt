@@ -1,74 +1,46 @@
 package com.example.smartbartender.ui.screens.detail
 
 import com.example.smartbartender.domain.model.JobStatus
+import com.example.smartbartender.domain.model.JobStep
 import com.example.smartbartender.domain.model.PourJob
-import com.example.smartbartender.domain.model.PourPlan
 import com.example.smartbartender.domain.model.StepKind
 
 /**
- * Turns a [PourJob] pushed by the machine into the screen state.
+ * Turns a [PourJob] pushed by the machine into the screen's [PourPhase].
  *
  * A pure function on purpose: the pour is the one piece of this app where being wrong has
  * physical consequences, and this way the whole thing can be driven through a scripted
  * sequence of jobs in a JVM test. See `PourReducerTest`.
  */
-fun reducePour(previous: PreparationState, job: PourJob): PreparationState {
-    val steps = job.steps.map { step ->
-        PourStep(
-            label = step.label,
-            detail = when {
-                step.kind == StepKind.POUR && step.ml != null -> {
-                    val poured = "${step.dispensedMl?.toInt() ?: 0} / ${step.ml.toInt()} ml"
-                    // Once the sensor has measured the glass, the number is what really went in.
-                    if (step.measured) "$poured · measured" else poured
-                }
-
-                else -> step.detail
-            },
-            isManual = step.kind.isManual,
+fun reducePour(previous: PourPhase, job: PourJob): PourPhase = when (job.status) {
+    JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.ABORTING -> {
+        val steps = job.steps.map(::toPourStep).ifEmpty { (previous as? PourPhase.Pouring)?.steps.orEmpty() }
+        PourPhase.Pouring(
+            jobId = job.jobId,
+            steps = steps,
+            currentStepIndex = job.currentStepIndex.coerceIn(0, steps.lastIndex.coerceAtLeast(0)),
+            machineProgress = job.progress,
+            waitingForGlass = job.waitingForGlass,
+            aborting = job.status == JobStatus.ABORTING,
         )
     }
 
-    return previous.copy(
-        isRunning = job.status.isLive,
-        isFinished = job.status == JobStatus.FINISHED,
-        isAborting = job.status == JobStatus.ABORTING,
-        steps = steps.ifEmpty { previous.steps },
-        currentStepIndex = job.currentStepIndex.coerceIn(0, (steps.size - 1).coerceAtLeast(0)),
-        jobId = job.jobId,
-        remoteProgress = job.progress,
-        waitingForGlass = job.waitingForGlass && job.status.isLive,
-        errorMessage = when (job.status) {
-            JobStatus.FAILED -> job.error?.message ?: "The machine stopped unexpectedly"
-            // Aborting was the user's own doing — not something to apologise for.
-            else -> null
-        },
-    )
+    JobStatus.FINISHED -> PourPhase.Finished(job.jobId)
+
+    JobStatus.FAILED -> PourPhase.Failed(PourFailure.Faulted(job.error?.message))
+
+    // Stopping was the user's own doing — not something to apologise for.
+    JobStatus.ABORTED -> PourPhase.Idle
+
+    // A status newer firmware added: keep showing what we had rather than guess.
+    JobStatus.UNKNOWN -> previous
 }
 
-/**
- * The state to show the instant the button is tapped, before the machine has answered.
- *
- * Without this the overlay would sit blank for one round trip. The steps here are a
- * prediction; the machine's first `pour` event replaces them wholesale.
- */
-fun optimisticPreparation(plan: PourPlan, jobId: String, glass: String?): PreparationState {
-    val steps = buildList {
-        add(PourStep("Place a glass", glass ?: "Cocktail glass"))
-        plan.request.items.forEach { item ->
-            add(PourStep("Pouring ${item.ingredientName}", "${item.ml.toInt()} ml"))
-        }
-        if (plan.request.items.isNotEmpty()) add(PourStep("Mixing", "Stirring the blend"))
-        plan.manualSteps.forEach { add(PourStep(it, "Add this yourself", isManual = true)) }
-        add(PourStep("Finishing touch", "Garnish and serve"))
-    }
-    return PreparationState(
-        isRunning = true,
-        steps = steps,
-        currentStepIndex = 0,
-        jobId = jobId,
-        remoteProgress = null,
-        // Every pour starts by looking for a glass; the machine's first event confirms it.
-        waitingForGlass = true,
-    )
-}
+private fun toPourStep(step: JobStep) = PourStep(
+    label = step.label,
+    detail = step.detail,
+    isManual = step.kind.isManual,
+    volume = step.ml
+        ?.takeIf { step.kind == StepKind.POUR }
+        ?.let { planned -> StepVolume(step.dispensedMl ?: 0.0, planned, step.measured) },
+)

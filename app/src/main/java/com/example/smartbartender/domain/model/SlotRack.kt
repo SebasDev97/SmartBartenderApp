@@ -4,10 +4,9 @@ package com.example.smartbartender.domain.model
  * Which bottle sits in which physical slot.
  *
  * [BottleCatalog.inSlotOrder] answers "in what order does the catalog list these bottles",
- * which is not the same question: it reshuffles the rack whenever a bottle is ejected. That
- * was harmless while pours were an animation. Now that slot N is a real pump with real
- * liquid in it, the assignment has to be stable *and* survive a restart, or the machine
- * pours gin when the app thinks it asked for vodka.
+ * which is not the same question: it reshuffles the rack whenever a bottle is ejected. Slot
+ * N is a real pump with real liquid in it, so the assignment has to be stable *and* survive
+ * a restart, or the machine pours gin when the app thinks it asked for vodka.
  */
 object SlotRack {
 

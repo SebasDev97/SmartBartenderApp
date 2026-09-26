@@ -32,27 +32,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.BottleVolume
 import com.example.smartbartender.domain.model.DrinkCount
 import com.example.smartbartender.domain.model.Milestone
+import com.example.smartbartender.domain.model.MilestoneKind
 import com.example.smartbartender.domain.model.PourStats
 import com.example.smartbartender.ui.components.EmptyState
 import com.example.smartbartender.ui.components.GlassPanel
+import com.example.smartbartender.ui.components.InfoRow
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.SectionHeader
 import com.example.smartbartender.ui.theme.ErrorRed
-import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
 import java.text.DateFormat
 import java.text.DateFormatSymbols
 import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
-import androidx.compose.ui.platform.LocalLocale
 
 /** What this phone has poured: counts, favourites, the busiest hour, and a few milestones. */
 @Composable
@@ -66,16 +68,15 @@ fun StatsScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
+    val accent = led.primary
     val stats = state.stats
 
     if (state.isEmpty || stats == null) {
         if (!state.isLoading) {
             EmptyState(
                 icon = Icons.Filled.Insights,
-                title = "No pours yet",
-                message = "Cocktails you make from this phone are counted here — how many, " +
-                    "which ones, and how much went through each pump.",
+                title = stringResource(R.string.stats_empty_title),
+                message = stringResource(R.string.stats_empty_message),
                 accent = accent,
                 modifier = modifier.padding(contentPadding),
             )
@@ -98,26 +99,26 @@ fun StatsScreen(
 
         if (stats.topCocktails.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
-            SectionHeader(title = "Most made", accent = accent)
+            SectionHeader(title = stringResource(R.string.stats_most_made), accent = accent)
             Spacer(Modifier.height(10.dp))
             TopCocktails(stats.topCocktails, accent = accent, onCocktailClick = onCocktailClick)
         }
 
         if (stats.bottles.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
-            SectionHeader(title = "Through the pumps", accent = accent)
+            SectionHeader(title = stringResource(R.string.stats_through_pumps), accent = accent)
             Spacer(Modifier.height(10.dp))
             BottleLeaderboard(stats.bottles, accent = accent)
         }
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "Your rhythm", accent = accent)
+        SectionHeader(title = stringResource(R.string.stats_rhythm), accent = accent)
         Spacer(Modifier.height(10.dp))
         Rhythm(stats)
 
         Spacer(Modifier.height(24.dp))
         SectionHeader(
-            title = "Milestones",
+            title = stringResource(R.string.stats_milestones),
             trailing = "${stats.milestones.count { it.achieved }} / ${stats.milestones.size}",
             accent = accent,
         )
@@ -126,27 +127,26 @@ fun StatsScreen(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            text = "Counted on this phone. The machine can't see how much is left in a bottle — " +
-                "these are the volumes its pumps poured.",
+            text = stringResource(R.string.stats_footnote),
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
         )
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onResetRequest) {
-            Text("Reset statistics", color = ErrorRed)
+            Text(stringResource(R.string.stats_reset), color = ErrorRed)
         }
     }
 
     if (state.showResetConfirm) {
         AlertDialog(
             onDismissRequest = onResetDismiss,
-            title = { Text("Reset statistics?") },
-            text = { Text("Every pour recorded on this phone is forgotten. This can't be undone.") },
+            title = { Text(stringResource(R.string.stats_reset_title)) },
+            text = { Text(stringResource(R.string.stats_reset_message)) },
             confirmButton = {
-                TextButton(onClick = onResetConfirm) { Text("Reset", color = ErrorRed) }
+                TextButton(onClick = onResetConfirm) { Text(stringResource(R.string.stats_reset_confirm), color = ErrorRed) }
             },
             dismissButton = {
-                TextButton(onClick = onResetDismiss) { Text("Keep") }
+                TextButton(onClick = onResetDismiss) { Text(stringResource(R.string.stats_reset_keep)) }
             },
         )
     }
@@ -157,14 +157,14 @@ private fun HeroTiles(stats: PourStats, accent: Color, ledEnabled: Boolean) {
     val edge = if (ledEnabled) accent else null
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatTile("${stats.cocktailsMade}", "Cocktails made", accent, edge, Modifier.weight(1f))
-            StatTile(formatVolume(stats.totalMl), "Poured in total", accent, edge, Modifier.weight(1f))
+            StatTile("${stats.cocktailsMade}", stringResource(R.string.stats_cocktails_made), accent, edge, Modifier.weight(1f))
+            StatTile(volumeText(stats.totalMl), stringResource(R.string.stats_poured_total), accent, edge, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatTile("${stats.recipesTried}", "Recipes tried", accent, edge, Modifier.weight(1f))
+            StatTile("${stats.recipesTried}", stringResource(R.string.stats_recipes_tried), accent, edge, Modifier.weight(1f))
             StatTile(
                 "${stats.thisWeek}",
-                "This week · ${stats.thisMonth} this month",
+                stringResource(R.string.stats_this_week, stats.thisMonth),
                 accent,
                 edge,
                 Modifier.weight(1f),
@@ -224,7 +224,7 @@ private fun TopCocktails(drinks: List<DrinkCount>, accent: Color, onCocktailClic
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = "×${drink.count}",
+                        text = stringResource(R.string.stats_times, drink.count),
                         style = MaterialTheme.typography.labelLarge,
                         color = TextSecondary,
                     )
@@ -249,7 +249,7 @@ private fun BottleLeaderboard(bottles: List<BottleVolume>, accent: Color) {
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = formatVolume(bottle.ml) + bottleEquivalents(bottle),
+                            text = bottleVolumeText(bottle),
                             style = MaterialTheme.typography.labelMedium,
                             color = TextSecondary,
                         )
@@ -267,16 +267,24 @@ private fun Rhythm(stats: PourStats) {
     val dates = DateFormat.getDateInstance(DateFormat.MEDIUM)
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            stats.happyHour?.let { InfoRow("Happy hour", String.format(LocalLocale.current.platformLocale, "%02d:00", it)) }
-            stats.favouriteWeekday?.let { InfoRow("Favourite day", DateFormatSymbols.getInstance().weekdays[it]) }
-            stats.averageDrinkMl?.let { InfoRow("Average drink", "${it.roundToInt()} ml") }
-            if (stats.cocktailsMade > 0) {
-                InfoRow("Alcohol-free", "${stats.mocktails} (${(stats.mocktailShare * 100).roundToInt()}%)")
+            stats.happyHour?.let { InfoRow(stringResource(R.string.stats_happy_hour), stringResource(R.string.stats_hour, it), emphasized = true) }
+            stats.favouriteWeekday?.let {
+                InfoRow(stringResource(R.string.stats_favourite_day), DateFormatSymbols.getInstance().weekdays[it], emphasized = true)
             }
-            InfoRow("Changed my mind", "${stats.stoppedEarly}")
-            if (stats.failed > 0) InfoRow("Machine trouble", "${stats.failed}")
-            stats.firstPourAtMs?.let { InfoRow("First pour", dates.format(Date(it))) }
-            stats.lastPourAtMs?.let { InfoRow("Latest pour", dates.format(Date(it))) }
+            stats.averageDrinkMl?.let {
+                InfoRow(stringResource(R.string.stats_average_drink), stringResource(R.string.volume_ml, it.roundToInt()), emphasized = true)
+            }
+            if (stats.cocktailsMade > 0) {
+                InfoRow(
+                    stringResource(R.string.stats_alcohol_free),
+                    stringResource(R.string.stats_share, stats.mocktails, (stats.mocktailShare * 100).roundToInt()),
+                    emphasized = true,
+                )
+            }
+            InfoRow(stringResource(R.string.stats_changed_mind), "${stats.stoppedEarly}", emphasized = true)
+            if (stats.failed > 0) InfoRow(stringResource(R.string.stats_machine_trouble), "${stats.failed}", emphasized = true)
+            stats.firstPourAtMs?.let { InfoRow(stringResource(R.string.stats_first_pour), dates.format(Date(it)), emphasized = true) }
+            stats.lastPourAtMs?.let { InfoRow(stringResource(R.string.stats_latest_pour), dates.format(Date(it)), emphasized = true) }
         }
     }
 }
@@ -289,14 +297,16 @@ private fun Milestones(milestones: List<Milestone>, accent: Color) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = if (milestone.achieved) Icons.Filled.EmojiEvents else Icons.Outlined.Lock,
-                        contentDescription = if (milestone.achieved) "Achieved" else "Locked",
+                        contentDescription = stringResource(
+                            if (milestone.achieved) R.string.stats_milestone_achieved else R.string.stats_milestone_locked,
+                        ),
                         tint = if (milestone.achieved) accent else TextSecondary.copy(alpha = 0.6f),
                         modifier = Modifier.size(22.dp),
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = milestone.title,
+                            text = stringResource(milestone.kind.titleRes),
                             style = MaterialTheme.typography.titleSmall,
                             color = if (milestone.achieved) {
                                 MaterialTheme.colorScheme.onSurface
@@ -305,7 +315,7 @@ private fun Milestones(milestones: List<Milestone>, accent: Color) {
                             },
                         )
                         Text(
-                            text = milestone.detail,
+                            text = stringResource(milestone.kind.detailRes),
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                         )
@@ -317,24 +327,6 @@ private fun Milestones(milestones: List<Milestone>, accent: Color) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 
@@ -357,12 +349,43 @@ private fun Bar(fraction: Float, color: Color) {
     }
 }
 
-private fun formatVolume(ml: Double): String =
-    if (ml < 1000) "${ml.roundToInt()} ml" else String.format(Locale.getDefault(), "%.1f L", ml / 1000)
+@Composable
+private fun volumeText(ml: Double): String =
+    if (ml < 1000) stringResource(R.string.volume_ml, ml.roundToInt()) else stringResource(R.string.volume_litres, ml / 1000)
 
-/** "≈ 1.7 bottles" once a pump has poured at least a tenth of one; below that it's noise. */
-private fun bottleEquivalents(bottle: BottleVolume): String {
+/** "1.2 L · ≈ 1.7 bottles" once a pump has poured at least a tenth of one; below that it's noise. */
+@Composable
+private fun bottleVolumeText(bottle: BottleVolume): String {
+    val volume = volumeText(bottle.ml)
     val bottles = bottle.bottleEquivalents
-    if (bottles < 0.1) return ""
-    return String.format(Locale.getDefault(), " · ≈ %.1f bottle%s", bottles, if (bottles >= 1.05) "s" else "")
+    if (bottles < 0.1) return volume
+    // "1.0 bottle" reads fine up to 1.05; past that the rounded number is plural.
+    val quantity = if (bottles >= 1.05) 2 else 1
+    return stringResource(R.string.stats_volume_with_bottles, volume, pluralStringResource(R.plurals.stats_bottles, quantity, bottles))
 }
+
+private val MilestoneKind.titleRes: Int
+    get() = when (this) {
+        MilestoneKind.FIRST_POUR -> R.string.milestone_first_pour
+        MilestoneKind.REGULAR -> R.string.milestone_regular
+        MilestoneKind.PARTY_HOST -> R.string.milestone_party_host
+        MilestoneKind.CENTURION -> R.string.milestone_centurion
+        MilestoneKind.FIRST_LITRE -> R.string.milestone_first_litre
+        MilestoneKind.FIVE_LITRES -> R.string.milestone_five_litres
+        MilestoneKind.EXPLORER -> R.string.milestone_explorer
+        MilestoneKind.CONNOISSEUR -> R.string.milestone_connoisseur
+        MilestoneKind.DESIGNATED_DRIVER -> R.string.milestone_designated_driver
+    }
+
+private val MilestoneKind.detailRes: Int
+    get() = when (this) {
+        MilestoneKind.FIRST_POUR -> R.string.milestone_first_pour_detail
+        MilestoneKind.REGULAR -> R.string.milestone_regular_detail
+        MilestoneKind.PARTY_HOST -> R.string.milestone_party_host_detail
+        MilestoneKind.CENTURION -> R.string.milestone_centurion_detail
+        MilestoneKind.FIRST_LITRE -> R.string.milestone_first_litre_detail
+        MilestoneKind.FIVE_LITRES -> R.string.milestone_five_litres_detail
+        MilestoneKind.EXPLORER -> R.string.milestone_explorer_detail
+        MilestoneKind.CONNOISSEUR -> R.string.milestone_connoisseur_detail
+        MilestoneKind.DESIGNATED_DRIVER -> R.string.milestone_designated_driver_detail
+    }

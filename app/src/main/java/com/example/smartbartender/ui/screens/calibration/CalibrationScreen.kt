@@ -5,18 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,21 +18,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.CalibrationPhase
 import com.example.smartbartender.domain.model.CalibrationRun
-import com.example.smartbartender.domain.model.CalibrationStatus
 import com.example.smartbartender.ui.components.GlassPanel
+import com.example.smartbartender.ui.components.InfoRow
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.SectionHeader
+import com.example.smartbartender.ui.screens.machine.AccentCheckbox
+import com.example.smartbartender.ui.screens.machine.LastRunSummary
+import com.example.smartbartender.ui.screens.machine.MachineRunPage
 import com.example.smartbartender.ui.theme.ErrorRed
-import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.NeonLime
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
-import java.util.Locale
 
 /** Everything the calibration screen can ask of its ViewModel. */
 data class CalibrationActions(
@@ -62,53 +58,29 @@ fun CalibrationScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = 16.dp,
-                end = 16.dp,
-                top = contentPadding.calculateTopPadding() + 8.dp,
-                bottom = contentPadding.calculateBottomPadding() + 24.dp,
-            ),
+    val accent = led.primary
+    MachineRunPage(
+        connected = state.connected,
+        busy = state.machineBusy,
+        disconnectedMessage = stringResource(R.string.calibration_disconnected),
+        busyMessage = stringResource(R.string.calibration_busy),
+        error = state.error,
+        contentPadding = contentPadding,
+        modifier = modifier,
     ) {
-        if (!state.connected) {
-            Text(
-                text = "Connect to the machine in Settings first — calibration runs on the machine itself.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextSecondary,
-            )
-            return@Column
-        }
-        if (state.machineBusy) {
-            Text(
-                text = "The machine is busy. Calibration is available again once it is done.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = NeonCyan,
-            )
-            Spacer(Modifier.height(16.dp))
-        }
-
-        SectionHeader(title = "1 · Glass sensor", accent = accent)
+        SectionHeader(title = stringResource(R.string.calibration_step_sensor), accent = accent)
         Spacer(Modifier.height(10.dp))
         SensorPanel(state = state, accent = accent, onMeasure = actions.onMeasureReference)
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "2 · Prime the pumps", accent = accent)
+        SectionHeader(title = stringResource(R.string.calibration_step_prime), accent = accent)
         Spacer(Modifier.height(10.dp))
         PumpsPanel(state = state, accent = accent, onToggle = actions.onTogglePump, onJog = actions.onJog)
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "3 · Calibrate", accent = accent)
+        SectionHeader(title = stringResource(R.string.calibration_step_calibrate), accent = accent)
         Spacer(Modifier.height(10.dp))
         RunPanel(state = state, accent = accent, onStart = actions.onStart, onAbort = actions.onAbort)
-
-        state.errorMessage?.let { message ->
-            Spacer(Modifier.height(16.dp))
-            Text(text = message, style = MaterialTheme.typography.bodyMedium, color = ErrorRed)
-        }
     }
 }
 
@@ -117,27 +89,26 @@ private fun SensorPanel(state: CalibrationUiState, accent: Color, onMeasure: () 
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column {
             InfoRow(
-                label = "Empty tray",
-                value = state.referenceCm?.let { "${it.cm()} cm" } ?: "Not measured",
+                label = stringResource(R.string.calibration_empty_tray),
+                value = state.referenceCm?.let { stringResource(R.string.distance_cm, it) }
+                    ?: stringResource(R.string.calibration_not_measured),
                 valueColor = if (state.referenceCm == null) ErrorRed else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(10.dp))
             val sensor = state.sensor
             InfoRow(
-                label = "Sensor now",
+                label = stringResource(R.string.calibration_sensor_now),
                 value = when {
-                    sensor == null -> "—"
-                    sensor.distanceCm == null -> "No echo"
-                    sensor.glassPresent -> "${sensor.distanceCm.cm()} cm · glass detected"
-                    else -> "${sensor.distanceCm.cm()} cm"
+                    sensor == null -> stringResource(R.string.calibration_no_reading)
+                    sensor.distanceCm == null -> stringResource(R.string.calibration_no_echo)
+                    sensor.glassPresent -> stringResource(R.string.calibration_glass_detected, sensor.distanceCm)
+                    else -> stringResource(R.string.distance_cm, sensor.distanceCm)
                 },
                 valueColor = if (sensor?.glassPresent == true) NeonLime else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Take every glass off the tray, then measure. Every glass is detected against " +
-                    "this distance, so measure again if the sensor or the tray moves. The machine " +
-                    "won't pour until it has one.",
+                text = stringResource(R.string.calibration_sensor_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
@@ -149,7 +120,9 @@ private fun SensorPanel(state: CalibrationUiState, accent: Color, onMeasure: () 
                 shape = RoundedCornerShape(12.dp),
             ) {
                 Text(
-                    text = if (state.isMeasuringReference) "Measuring…" else "Measure empty tray",
+                    text = stringResource(
+                        if (state.isMeasuringReference) R.string.calibration_measuring else R.string.calibration_measure,
+                    ),
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -167,38 +140,41 @@ private fun PumpsPanel(
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column {
             Text(
-                text = "A dry tube pours far too little on its first run. Hold a cup under the nozzle " +
-                    "and test each pump until liquid flows steadily. Untick a pump to leave it out.",
+                text = stringResource(R.string.calibration_prime_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
             Spacer(Modifier.height(8.dp))
             state.pumps.forEach { row ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
+                    AccentCheckbox(
                         checked = row.selected,
                         onCheckedChange = { onToggle(row.pump) },
                         enabled = !state.isRunning,
-                        colors = CheckboxDefaults.colors(checkedColor = accent, checkmarkColor = Obsidian),
+                        accent = accent,
                     )
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = "Pump ${row.pump} · ${row.bottleName ?: "empty"}",
+                            text = stringResource(
+                                R.string.calibration_pump,
+                                row.pump,
+                                row.bottleName ?: stringResource(R.string.calibration_pump_empty),
+                            ),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = "${row.mlPerSecond.rate()} ml/s",
+                            text = stringResource(R.string.flow_rate, row.mlPerSecond),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (row.result != null) NeonLime else TextSecondary,
+                            color = if (row.pump in state.calibratedPumps) NeonLime else TextSecondary,
                         )
                     }
                     TextButton(onClick = { onJog(row.pump) }, enabled = state.canDrivePumps) {
                         Text(
                             text = if (state.joggingPump == row.pump) {
-                                "Running…"
+                                stringResource(R.string.calibration_running)
                             } else {
-                                "Test ${CalibrationViewModel.PRIME_SECONDS.toInt()} s"
+                                stringResource(R.string.calibration_test_pump, CalibrationViewModel.PRIME_SECONDS.toInt())
                             },
                             color = if (state.canDrivePumps) accent else SteelOutline,
                         )
@@ -217,19 +193,19 @@ private fun RunPanel(state: CalibrationUiState, accent: Color, onStart: () -> Un
             if (run != null && state.isRunning) {
                 RunProgress(run = run, accent = accent)
                 Spacer(Modifier.height(12.dp))
-                TextButton(onClick = onAbort) { Text("Stop calibration", color = TextSecondary) }
+                TextButton(onClick = onAbort) {
+                    Text(stringResource(R.string.calibration_stop), color = TextSecondary)
+                }
             } else {
                 Text(
-                    text = "Place the empty ${state.glassDiameterMm.toInt()} mm glass under the nozzle " +
-                        "and start. Each selected pump runs a few seconds into it; the sensor measures " +
-                        "how far the level rose. The new rates are used straight away.",
+                    text = stringResource(R.string.calibration_run_help, state.glassDiameterMm.toInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                 )
                 if (state.referenceCm == null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Measure the empty tray first (step 1).",
+                        text = stringResource(R.string.calibration_measure_first),
                         style = MaterialTheme.typography.bodySmall,
                         color = ErrorRed,
                     )
@@ -241,11 +217,23 @@ private fun RunPanel(state: CalibrationUiState, accent: Color, onStart: () -> Un
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text(if (state.isStarting) "Starting…" else "Start calibration", fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(if (state.isStarting) R.string.run_starting else R.string.calibration_start),
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
                 run?.let {
                     Spacer(Modifier.height(16.dp))
-                    RunSummary(run = it)
+                    LastRunSummary(
+                        status = it.status,
+                        message = it.message,
+                        fault = it.error,
+                        stoppedText = stringResource(R.string.run_stopped),
+                    )
+                    if (it.results.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        ResultRows(it)
+                    }
                 }
             }
         }
@@ -254,11 +242,11 @@ private fun RunPanel(state: CalibrationUiState, accent: Color, onStart: () -> Un
 
 @Composable
 private fun RunProgress(run: CalibrationRun, accent: Color) {
-    val done = run.results.size
     Text(
-        text = when (run.phase) {
-            CalibrationPhase.WAITING_GLASS -> "Waiting for the empty glass"
-            else -> run.currentPump?.let { "Pump $it of ${run.pumps.size}" } ?: "Calibrating"
+        text = when {
+            run.phase == CalibrationPhase.WAITING_GLASS -> stringResource(R.string.calibration_waiting_glass)
+            run.currentPump != null -> stringResource(R.string.calibration_pump_of, run.currentPump, run.pumps.size)
+            else -> stringResource(R.string.calibration_calibrating)
         },
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
@@ -267,7 +255,7 @@ private fun RunProgress(run: CalibrationRun, accent: Color) {
     Text(text = run.message, style = MaterialTheme.typography.bodyMedium, color = accent)
     Spacer(Modifier.height(12.dp))
     LinearProgressIndicator(
-        progress = { if (run.pumps.isEmpty()) 0f else done.toFloat() / run.pumps.size },
+        progress = { if (run.pumps.isEmpty()) 0f else run.results.size.toFloat() / run.pumps.size },
         modifier = Modifier.fillMaxWidth(),
         color = accent,
         trackColor = SteelOutline,
@@ -279,46 +267,18 @@ private fun RunProgress(run: CalibrationRun, accent: Color) {
 }
 
 @Composable
-private fun RunSummary(run: CalibrationRun) {
-    val (text, color) = when (run.status) {
-        CalibrationStatus.FINISHED -> run.message to NeonLime
-        CalibrationStatus.ABORTED -> "Stopped" to TextSecondary
-        else -> (run.error?.message ?: run.message) to ErrorRed
-    }
-    Text(text = "Last run: $text", style = MaterialTheme.typography.bodyMedium, color = color)
-    if (run.results.isNotEmpty()) {
-        Spacer(Modifier.height(8.dp))
-        ResultRows(run)
-    }
-}
-
-@Composable
 private fun ResultRows(run: CalibrationRun) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         run.results.forEach { result ->
             InfoRow(
-                label = "Pump ${result.pump}",
-                value = "${result.mlPerSecond.rate()} ml/s  ·  ${result.volumeMl.toInt()} ml in " +
-                    String.format(Locale.US, "%.1f", result.seconds) + " s",
+                label = stringResource(R.string.calibration_result_pump, result.pump),
+                value = stringResource(
+                    R.string.calibration_result,
+                    result.mlPerSecond,
+                    result.volumeMl.toInt(),
+                    result.seconds,
+                ),
             )
         }
     }
 }
-
-@Composable
-private fun InfoRow(
-    label: String,
-    value: String,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        Spacer(Modifier.width(12.dp))
-        Spacer(Modifier.weight(1f))
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = valueColor)
-    }
-}
-
-private fun Double.cm(): String = String.format(Locale.US, "%.1f", this)
-
-private fun Double.rate(): String = String.format(Locale.US, "%.2f", this)

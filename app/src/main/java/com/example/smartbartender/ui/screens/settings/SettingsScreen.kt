@@ -30,19 +30,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
+import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.ui.common.text
 import com.example.smartbartender.ui.components.GlassPanel
+import com.example.smartbartender.ui.components.InfoRow
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.MetaChip
 import com.example.smartbartender.ui.components.SectionHeader
+import com.example.smartbartender.ui.components.label
 import com.example.smartbartender.ui.components.ledColorAt
-import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.ui.theme.NeonAmber
-import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.TextSecondary
 
@@ -62,7 +66,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
+    val accent = led.primary
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -75,13 +79,13 @@ fun SettingsScreen(
             ),
     ) {
         Text(
-            text = "Settings",
+            text = stringResource(R.string.nav_settings),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(20.dp))
 
-        SectionHeader(title = "Machine link", accent = accent)
+        SectionHeader(title = stringResource(R.string.settings_machine_link), accent = accent)
         Spacer(Modifier.height(10.dp))
         MachineLinkPanel(
             state = state,
@@ -95,7 +99,7 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "Lights", accent = accent)
+        SectionHeader(title = stringResource(R.string.settings_lights), accent = accent)
         Spacer(Modifier.height(10.dp))
 
         GlassPanel(accent = if (led.enabled) accent else null, modifier = Modifier.fillMaxWidth()) {
@@ -103,13 +107,13 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = "LED show",
+                            text = stringResource(R.string.settings_led_show),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Animated light strip around the glass tray, playing while a cocktail is poured.",
+                            text = stringResource(R.string.settings_led_show_description),
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                         )
@@ -129,7 +133,7 @@ fun SettingsScreen(
                 LedStrip(led = led)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (state.ledShowEnabled) "Strip online — cycling spectrum" else "Strip off — neutral finish",
+                    text = stringResource(if (state.ledShowEnabled) R.string.settings_strip_on else R.string.settings_strip_off),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (state.ledShowEnabled) accent else TextSecondary,
                 )
@@ -137,26 +141,31 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "Machine", accent = accent)
+        SectionHeader(title = stringResource(R.string.settings_machine), accent = accent)
         Spacer(Modifier.height(10.dp))
 
-        val snapshot = (state.connection as? ConnectionState.Connected)?.snapshot
+        val snapshot = state.connection.snapshotOrNull
         GlassPanel(modifier = Modifier.fillMaxWidth()) {
             Column {
-                InfoRow("Slots filled", "${state.loadedBottleCount} / ${state.totalBottleCount}")
+                InfoRow(
+                    stringResource(R.string.settings_slots_filled),
+                    stringResource(R.string.settings_slots_value, state.loadedBottleCount, state.totalBottleCount),
+                )
                 Spacer(Modifier.height(12.dp))
-                InfoRow("Recipe source", "TheCocktailDB")
+                InfoRow(stringResource(R.string.settings_recipe_source), stringResource(R.string.settings_recipe_source_value))
                 Spacer(Modifier.height(12.dp))
-                InfoRow("Hardware link", state.hardwareLinkLabel)
+                InfoRow(stringResource(R.string.settings_hardware_link), hardwareLinkLabel(state.connection))
                 if (snapshot != null) {
                     Spacer(Modifier.height(12.dp))
                     InfoRow(
-                        "Glass sensor",
-                        if (snapshot.sensorReferenceCm == null) "Not set up" else "Ready",
+                        stringResource(R.string.settings_glass_sensor),
+                        stringResource(
+                            if (snapshot.sensorReferenceCm == null) R.string.settings_sensor_not_set_up else R.string.settings_sensor_ready,
+                        ),
                     )
                 }
                 Spacer(Modifier.height(14.dp))
-                MetaChip(text = "Prototype build", accent = accent)
+                MetaChip(text = stringResource(R.string.settings_prototype_build), accent = accent)
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -165,7 +174,7 @@ fun SettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text("Calibrate pumps", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.title_calibration), fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = onOpenCleaning,
@@ -173,13 +182,13 @@ fun SettingsScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
                         shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text("Clean pumps", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.title_cleaning), fontWeight = FontWeight.Bold)
                     }
                 }
                 if (snapshot != null && snapshot.sensorReferenceCm == null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "The machine won't pour until its glass sensor has measured the empty tray.",
+                        text = stringResource(R.string.settings_sensor_needed),
                         style = MaterialTheme.typography.bodySmall,
                         color = NeonAmber,
                     )
@@ -190,11 +199,9 @@ fun SettingsScreen(
         if (snapshot == null || snapshot.isSimulated) {
             Spacer(Modifier.height(24.dp))
             Text(
-                text = if (snapshot == null) {
-                    "No machine connected — pouring is disabled until one is."
-                } else {
-                    "Connected to a simulated machine. Commands are logged, no liquid moves."
-                },
+                text = stringResource(
+                    if (snapshot == null) R.string.settings_no_machine else R.string.settings_simulated_machine,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
@@ -222,13 +229,13 @@ private fun MachineLinkPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        text = "Use hardware machine",
+                        text = stringResource(R.string.settings_use_hardware),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Pours and the light strip run on the Raspberry Pi instead of on screen.",
+                        text = stringResource(R.string.settings_use_hardware_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                     )
@@ -250,8 +257,8 @@ private fun MachineLinkPanel(
                 OutlinedTextField(
                     value = state.machineHost,
                     onValueChange = onHostChange,
-                    label = { Text("Address") },
-                    placeholder = { Text("192.168.1.42") },
+                    label = { Text(stringResource(R.string.settings_address)) },
+                    placeholder = { Text(stringResource(R.string.settings_address_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.weight(2f),
                     colors = machineFieldColors(accent),
@@ -260,7 +267,7 @@ private fun MachineLinkPanel(
                 OutlinedTextField(
                     value = state.machinePort,
                     onValueChange = onPortChange,
-                    label = { Text("Port") },
+                    label = { Text(stringResource(R.string.settings_port)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f),
@@ -275,23 +282,26 @@ private fun MachineLinkPanel(
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Connect", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.settings_connect), fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = onTest, enabled = !state.isTesting) {
-                    Text(if (state.isTesting) "Testing…" else "Test", color = accent)
+                    Text(
+                        stringResource(if (state.isTesting) R.string.settings_testing else R.string.settings_test),
+                        color = accent,
+                    )
                 }
             }
 
             Spacer(Modifier.height(10.dp))
             Text(
-                text = state.machineSummary,
+                text = machineSummary(state.connection),
                 style = MaterialTheme.typography.labelSmall,
                 color = state.connection.statusColor(accent),
             )
             state.testResult?.let { result ->
                 Spacer(Modifier.height(4.dp))
-                Text(text = result, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text(text = result.text(), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
         }
     }
@@ -331,13 +341,31 @@ private fun LedStrip(led: LedState, modifier: Modifier = Modifier) {
     )
 }
 
+/** One line under the connect button: what the link is doing right now. */
 @Composable
-private fun InfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+private fun machineSummary(connection: ConnectionState): String = when (connection) {
+    ConnectionState.Disabled -> stringResource(R.string.settings_not_connected)
+    ConnectionState.Connecting -> stringResource(R.string.settings_connecting)
+    is ConnectionState.Failed -> connection.error.text()
+    is ConnectionState.Connected -> with(connection.snapshot) {
+        stringResource(R.string.settings_machine_summary, name, backend.label(), pumpCount)
     }
+}
+
+@Composable
+private fun hardwareLinkLabel(connection: ConnectionState): String = stringResource(
+    when (connection) {
+        is ConnectionState.Connected ->
+            if (connection.snapshot.isSimulated) R.string.settings_link_simulated else R.string.settings_link_live
+        ConnectionState.Connecting -> R.string.settings_connecting
+        else -> R.string.settings_not_connected
+    },
+)
+
+@Composable
+private fun ConnectionTest.text(): String = when (this) {
+    is ConnectionTest.Found -> with(snapshot) {
+        stringResource(R.string.settings_test_found, name, backend.label(), firmware)
+    }
+    is ConnectionTest.Failed -> error.text()
 }

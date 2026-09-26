@@ -41,17 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CocktailSummary
+import com.example.smartbartender.ui.common.text
 import com.example.smartbartender.ui.components.CocktailGridCard
 import com.example.smartbartender.ui.components.CocktailGridSkeleton
 import com.example.smartbartender.ui.components.EmptyState
 import com.example.smartbartender.ui.components.ErrorState
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.theme.NeonAmber
-import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.NeonMagenta
 import com.example.smartbartender.ui.theme.Obsidian
 import com.example.smartbartender.ui.theme.SteelOutline
@@ -73,7 +75,7 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
+    val accent = led.primary
     val keyboard = LocalSoftwareKeyboardController.current
 
     Column(
@@ -94,11 +96,13 @@ fun LibraryScreen(
                 singleLine = true,
                 placeholder = {
                     Text(
-                        text = when (state.filter) {
-                            LibraryFilter.ALL -> "Search cocktails"
-                            LibraryFilter.FAVOURITES -> "Search favourites"
-                            LibraryFilter.MINE -> "Search my drinks"
-                        },
+                        text = stringResource(
+                            when (state.filter) {
+                                LibraryFilter.ALL -> R.string.library_search_all
+                                LibraryFilter.FAVOURITES -> R.string.library_search_favourites
+                                LibraryFilter.MINE -> R.string.library_search_mine
+                            },
+                        ),
                         color = TextSecondary,
                     )
                 },
@@ -108,7 +112,7 @@ fun LibraryScreen(
                 trailingIcon = {
                     if (state.query.isNotEmpty()) {
                         IconButton(onClick = onClearQuery) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = TextSecondary)
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.library_clear_search), tint = TextSecondary)
                         }
                     }
                 },
@@ -127,7 +131,7 @@ fun LibraryScreen(
             IconButton(onClick = onSurpriseMe) {
                 Icon(
                     imageVector = Icons.Filled.Casino,
-                    contentDescription = "Surprise me with a random cocktail",
+                    contentDescription = stringResource(R.string.library_surprise_me),
                     tint = accent,
                 )
             }
@@ -143,7 +147,7 @@ fun LibraryScreen(
             FilterChip(
                 selected = state.filter == LibraryFilter.ALL,
                 onClick = { onFilterChange(LibraryFilter.ALL) },
-                label = { Text("All") },
+                label = { Text(stringResource(R.string.library_filter_all)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = accent.copy(alpha = 0.16f),
                     selectedLabelColor = accent,
@@ -153,9 +157,7 @@ fun LibraryScreen(
                 selected = state.filter == LibraryFilter.FAVOURITES,
                 onClick = { onFilterChange(LibraryFilter.FAVOURITES) },
                 label = {
-                    Text(
-                        if (state.favouriteCount == 0) "Favourites" else "Favourites (${state.favouriteCount})",
-                    )
+                    Text(countedLabel(stringResource(R.string.library_filter_favourites), state.favouriteCount))
                 },
                 leadingIcon = {
                     Icon(
@@ -178,7 +180,7 @@ fun LibraryScreen(
                 selected = state.filter == LibraryFilter.MINE,
                 onClick = { onFilterChange(LibraryFilter.MINE) },
                 label = {
-                    Text(if (state.customDrinks.isEmpty()) "My drinks" else "My drinks (${state.customDrinks.size})")
+                    Text(countedLabel(stringResource(R.string.library_filter_mine), state.customDrinks.size))
                 },
                 leadingIcon = {
                     Icon(
@@ -209,13 +211,15 @@ fun LibraryScreen(
                 state.filter == LibraryFilter.MINE -> if (state.visibleMyDrinks.isEmpty()) {
                     EmptyState(
                         icon = Icons.Outlined.Science,
-                        title = if (state.customDrinks.isEmpty()) "No drinks of your own yet" else "No matches",
+                        title = stringResource(
+                            if (state.customDrinks.isEmpty()) R.string.library_mine_empty_title else R.string.library_no_matches,
+                        ),
                         message = if (state.customDrinks.isEmpty()) {
-                            "Pick up to ${BottleCatalog.MAX_SLOTS} bottles, set the millilitres, and the machine pours it your way."
+                            stringResource(R.string.library_mine_empty_message, BottleCatalog.MAX_SLOTS)
                         } else {
-                            "None of your drinks is called \"${state.query}\"."
+                            stringResource(R.string.library_mine_no_match, state.query)
                         },
-                        actionLabel = if (state.customDrinks.isEmpty()) "Create a drink" else null,
+                        actionLabel = if (state.customDrinks.isEmpty()) stringResource(R.string.library_create_drink) else null,
                         onAction = onCreateDrink,
                         accent = NeonAmber,
                     )
@@ -237,7 +241,7 @@ fun LibraryScreen(
                     ExtendedFloatingActionButton(
                         onClick = onCreateDrink,
                         icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                        text = { Text("New drink") },
+                        text = { Text(stringResource(R.string.library_new_drink)) },
                         containerColor = NeonAmber,
                         contentColor = Obsidian,
                         modifier = Modifier
@@ -249,11 +253,13 @@ fun LibraryScreen(
                 state.filter == LibraryFilter.FAVOURITES -> if (state.visibleFavourites.isEmpty()) {
                     EmptyState(
                         icon = Icons.Outlined.FavoriteBorder,
-                        title = if (state.favouriteCount == 0) "No favourites yet" else "No matches",
+                        title = stringResource(
+                            if (state.favouriteCount == 0) R.string.library_favourites_empty_title else R.string.library_no_matches,
+                        ),
                         message = if (state.favouriteCount == 0) {
-                            "Tap the heart on any cocktail to keep it here."
+                            stringResource(R.string.library_favourites_empty_message)
                         } else {
-                            "None of your favourites is called \"${state.query}\"."
+                            stringResource(R.string.library_favourites_no_match, state.query)
                         },
                     )
                 } else {
@@ -269,15 +275,15 @@ fun LibraryScreen(
 
                 state.isLoading -> CocktailGridSkeleton(contentPadding = gridPadding)
 
-                state.errorMessage != null -> ErrorState(message = state.errorMessage, onRetry = onRetry)
+                state.loadError != null -> ErrorState(message = state.loadError.text(), onRetry = onRetry)
 
                 state.results.isEmpty() -> EmptyState(
                     icon = Icons.Outlined.SearchOff,
-                    title = if (state.isSearching) "No matches" else "Nothing to show",
+                    title = stringResource(if (state.isSearching) R.string.library_no_matches else R.string.library_nothing_title),
                     message = if (state.isSearching) {
-                        "No cocktail called \"${state.query}\" was found. Try a shorter name."
+                        stringResource(R.string.library_search_no_match, state.query)
                     } else {
-                        "The library could not be loaded."
+                        stringResource(R.string.library_nothing_message)
                     },
                 )
 
@@ -293,6 +299,11 @@ fun LibraryScreen(
         }
     }
 }
+
+/** "Favourites" with nothing in it, "Favourites (3)" once there is. */
+@Composable
+private fun countedLabel(label: String, count: Int): String =
+    if (count == 0) label else stringResource(R.string.library_filter_counted, label, count)
 
 @Composable
 private fun CocktailGrid(

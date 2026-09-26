@@ -1,8 +1,10 @@
 package com.example.smartbartender.data.remote.dto
 
+import com.example.smartbartender.domain.model.AlcoholContent
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.RecipeIngredient
+import com.example.smartbartender.domain.model.folded
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -13,9 +15,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 
 /**
- * TheCocktailDB answers "no results" inconsistently: sometimes `"drinks": null`, sometimes
- * the *string* `"drinks": "None Found"`. This serializer accepts either and yields an empty
- * list, so a miss never surfaces as a parse error.
+ * TheCocktailDB answers "no results" inconsistently: sometimes `"drinks": null`, sometimes a
+ * bare *string* such as `"no data found"` or `"None Found"`. This serializer turns anything
+ * that is not an array into an empty list, so a miss never surfaces as a parse error.
  */
 private open class LenientDrinkListSerializer<T>(
     private val itemSerializer: KSerializer<T>,
@@ -119,12 +121,20 @@ data class CocktailDto(
         }
     }
 
+    /** `strAlcoholic` is one of three phrases; anything else is treated as not stated. */
+    private fun alcoholContent(): AlcoholContent? = when (alcoholic?.folded()) {
+        "alcoholic" -> AlcoholContent.ALCOHOLIC
+        "non alcoholic" -> AlcoholContent.NON_ALCOHOLIC
+        "optional alcohol" -> AlcoholContent.OPTIONAL
+        else -> null
+    }
+
     fun toDomain() = Cocktail(
         id = id,
         name = name?.trim().orEmpty(),
         thumbUrl = thumb,
         category = category?.trim()?.takeIf { it.isNotEmpty() },
-        alcoholic = alcoholic?.trim()?.takeIf { it.isNotEmpty() },
+        alcohol = alcoholContent(),
         glass = glass?.trim()?.takeIf { it.isNotEmpty() },
         instructions = instructions?.trim()?.takeIf { it.isNotEmpty() },
         ingredients = ingredientPairs(),

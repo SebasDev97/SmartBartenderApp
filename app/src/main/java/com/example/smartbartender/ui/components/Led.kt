@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import com.example.smartbartender.domain.model.LedShow
 import com.example.smartbartender.ui.theme.LedSpectrum
 import com.example.smartbartender.ui.theme.NeonCyan
 import com.example.smartbartender.ui.theme.SteelOutline
@@ -35,7 +36,7 @@ fun ledColorAt(progress: Float): Color {
  * the colour simply collapses to the machine's neutral cyan.
  */
 @Composable
-fun rememberLedState(enabled: Boolean, cycleMillis: Int = 7000): LedState {
+fun rememberLedState(enabled: Boolean, cycleMillis: Int = LedShow.CYCLE_MILLIS): LedState {
     val transition = rememberInfiniteTransition(label = "led")
     val progress by transition.animateFloat(
         initialValue = 0f,
@@ -68,10 +69,19 @@ fun rememberLedState(enabled: Boolean, cycleMillis: Int = 7000): LedState {
 data class LedState(
     val enabled: Boolean,
     val progress: Float,
+    /**
+     * The accent every screen draws with: the strip's live hue, or the machine's neutral cyan
+     * while the show is off — so callers never need to check [enabled] to pick a colour.
+     */
     val primary: Color,
     val secondary: Color,
     val intensity: Float,
-)
+) {
+    companion object {
+        /** The show switched off, frozen — for previews. */
+        val Off = LedState(enabled = false, progress = 0f, primary = NeonCyan, secondary = SteelOutline, intensity = 0f)
+    }
+}
 
 /**
  * Ambient light spill behind screen content. Neutral (invisible) when the LED show is off.

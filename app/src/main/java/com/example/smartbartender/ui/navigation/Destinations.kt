@@ -1,45 +1,62 @@
 package com.example.smartbartender.ui.navigation
 
+import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.LocalBar
 import androidx.compose.material.icons.filled.Liquor
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.smartbartender.R
+import kotlinx.serialization.Serializable
+import kotlin.reflect.KClass
 
-/** Every screen the app can show. */
-object Routes {
-    const val AVAILABLE = "available"
-    const val LIBRARY = "library"
-    const val BOTTLES = "bottles"
-    const val STATS = "stats"
-    const val SETTINGS = "settings"
-    const val DETAIL = "detail/{cocktailId}"
+/*
+ * Every screen the app can show, as a type-safe route. A screen's arguments are the route's
+ * properties, and its ViewModel reads them back with `SavedStateHandle.toRoute()`.
+ */
 
-    /** Tray reference, pump priming and calibration, pushed from Settings. */
-    const val CALIBRATION = "calibration"
+@Serializable data object AvailableRoute
 
-    /** Rinse the pump lines with warm water, pushed from Settings. */
-    const val CLEANING = "cleaning"
+@Serializable data object LibraryRoute
 
-    /** Create a custom drink, or edit one when `drinkId` is given. */
-    const val CUSTOM_EDIT = "custom/edit?drinkId={drinkId}"
+@Serializable data object BottlesRoute
 
-    fun detail(cocktailId: String) = "detail/$cocktailId"
+@Serializable data object StatsRoute
 
-    fun customEdit(drinkId: String? = null) = if (drinkId == null) "custom/edit" else "custom/edit?drinkId=$drinkId"
-}
+@Serializable data object SettingsRoute
+
+@Serializable data class DetailRoute(val cocktailId: String)
+
+/** Create a custom drink, or edit the one with [drinkId]. */
+@Serializable data class CustomEditRoute(val drinkId: String? = null)
+
+/** Tray reference, pump priming and calibration, pushed from Settings. */
+@Serializable data object CalibrationRoute
+
+/** Rinse the pump lines with warm water, pushed from Settings. */
+@Serializable data object CleaningRoute
 
 /** The bottom-bar destinations, in display order. */
 enum class TopLevelDestination(
-    val route: String,
-    val label: String,
+    val route: Any,
+    @StringRes val labelRes: Int,
+    @StringRes val titleRes: Int,
     val icon: ImageVector,
 ) {
-    AVAILABLE(Routes.AVAILABLE, "Available", Icons.Filled.AutoAwesome),
-    LIBRARY(Routes.LIBRARY, "Library", Icons.Filled.LocalBar),
-    BOTTLES(Routes.BOTTLES, "Bottles", Icons.Filled.Liquor),
-    STATS(Routes.STATS, "Stats", Icons.Filled.Insights),
-    SETTINGS(Routes.SETTINGS, "Settings", Icons.Filled.Settings),
+    AVAILABLE(AvailableRoute, R.string.nav_available, R.string.app_name, Icons.Filled.AutoAwesome),
+    LIBRARY(LibraryRoute, R.string.nav_library, R.string.nav_library, Icons.Filled.LocalBar),
+    BOTTLES(BottlesRoute, R.string.nav_bottles, R.string.nav_bottles, Icons.Filled.Liquor),
+    STATS(StatsRoute, R.string.nav_stats, R.string.nav_stats, Icons.Filled.Insights),
+    SETTINGS(SettingsRoute, R.string.nav_settings, R.string.nav_settings, Icons.Filled.Settings),
 }
+
+/**
+ * Top-bar titles of the pushed screens that have a fixed one. The recipe screen has none —
+ * its photo is its title — and the editor's depends on its argument.
+ */
+val PushedScreenTitles: Map<KClass<out Any>, Int> = mapOf(
+    CalibrationRoute::class to R.string.title_calibration,
+    CleaningRoute::class to R.string.title_cleaning,
+)

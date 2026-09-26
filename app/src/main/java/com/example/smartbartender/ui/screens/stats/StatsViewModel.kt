@@ -2,7 +2,7 @@ package com.example.smartbartender.ui.screens.stats
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.PourHistoryStore
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.PourStats
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +20,7 @@ data class StatsUiState(
 
 /** Turns the pour history into [PourStats]. All the arithmetic lives in [PourStats.compute]. */
 class StatsViewModel(
-    private val preferences: BartenderPreferences,
+    private val history: PourHistoryStore,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -29,7 +29,7 @@ class StatsViewModel(
 
     init {
         viewModelScope.launch {
-            preferences.pourHistory.collect { records ->
+            history.pourHistory.collect { records ->
                 val stats = PourStats.compute(records, nowMs = clock())
                 _uiState.update { it.copy(isLoading = false, stats = stats) }
             }
@@ -42,10 +42,10 @@ class StatsViewModel(
 
     fun confirmReset() {
         _uiState.update { it.copy(showResetConfirm = false) }
-        viewModelScope.launch { preferences.clearPourHistory() }
+        viewModelScope.launch { history.clearPourHistory() }
     }
 
     companion object {
-        val Factory = containerViewModelFactory { container -> StatsViewModel(container.preferences) }
+        val Factory = containerViewModelFactory { container -> StatsViewModel(container.pourHistory) }
     }
 }

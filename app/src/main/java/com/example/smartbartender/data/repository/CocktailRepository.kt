@@ -1,11 +1,11 @@
 package com.example.smartbartender.data.repository
 
 import com.example.smartbartender.data.remote.CocktailApi
+import com.example.smartbartender.domain.model.Availability
+import com.example.smartbartender.domain.model.AvailabilityResult
 import com.example.smartbartender.domain.model.Bottle
-import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.CocktailSummary
-import com.example.smartbartender.domain.model.MakeableCocktail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -31,11 +31,6 @@ class CocktailRepository(private val api: CocktailApi) {
     /** Bounds parallel requests so we stay polite to the public API. */
     private val requestLimiter = Semaphore(permits = 6)
 
-    data class AvailabilityResult(
-        val canMakeNow: List<MakeableCocktail>,
-        val almost: List<MakeableCocktail>,
-    )
-
     suspend fun searchByName(query: String): List<Cocktail> {
         val drinks = requestLimiter.withPermit { api.searchByName(query).drinks.map { it.toDomain() } }
         cacheLock.withLock { drinks.forEach { cocktailsById[it.id] = it } }
@@ -57,9 +52,7 @@ class CocktailRepository(private val api: CocktailApi) {
         return cocktail
     }
 
-    /**
-     * A browsable slice of the catalog for the Library landing state.
-     */
+    /** The whole recipe book, sorted by name, for the Library before anything is searched. */
     suspend fun browse(): List<Cocktail> = withContext(Dispatchers.Default) {
         recipeCatalog().sortedBy { it.name }
     }
@@ -74,8 +67,8 @@ class CocktailRepository(private val api: CocktailApi) {
      *    `filter.php?i=` at a single drink per ingredient — without this the answer would be
      *    a handful of drinks instead of the whole book.
      *
-     * Each recipe is then scored against the loaded bottles plus the pantry staples that are
-     * always on the bar top (ice, sugar, garnishes).
+     * Each recipe is then scored by [Availability]. The result is cached per set of loaded
+     * bottles, so changing the rack recomputes it and returning to the tab does not.
      */
     suspend fun findMakeable(loadedBottles: List<Bottle>): AvailabilityResult = withContext(Dispatchers.Default) {
         val key = loadedBottles.map { it.id }.toSet()
@@ -92,17 +85,7 @@ class CocktailRepository(private val api: CocktailApi) {
                 .filterNotNull()
         }
 
-        val recipes = (catalog + extras).distinctBy { it.id }
-        val evaluated = recipes
-            .filter { it.ingredients.isNotEmpty() }
-            .map { cocktail -> evaluate(cocktail, key) }
-
-        val result = AvailabilityResult(
-            canMakeNow = evaluated.filter { it.canMakeNow }.sortedBy { it.cocktail.name },
-            almost = evaluated
-                .filter { it.missingIngredients.size == 1 }
-                .sortedWith(compareBy({ it.missingIngredients.first() }, { it.cocktail.name })),
-        )
+        val result = Availability.classify((catalog + extras).distinctBy { it.id }, key)
         cacheLock.withLock { lastAvailability = key to result }
         result
     }
@@ -149,25 +132,6 @@ class CocktailRepository(private val api: CocktailApi) {
         }
         cacheLock.withLock { candidatesByIngredient[bottle.apiName] = summaries }
         return summaries
-    }
-
-    private fun evaluate(cocktail: Cocktail, loadedBottleIds: Set<String>): MakeableCocktail {
-        val missing = cocktail.ingredients
-            .filterNot { ingredient -> isAvailable(ingredient.name, loadedBottleIds) }
-            .map { it.name }
-            .distinct()
-        return MakeableCocktail(cocktail = cocktail, missingIngredients = missing)
-    }
-
-    private fun isAvailable(ingredientName: String, loadedBottleIds: Set<String>): Boolean {
-        if (BottleCatalog.isPantryStaple(ingredientName)) return true
-        val bottleId = BottleCatalog.resolveBottle(ingredientName)?.id ?: return false
-        return bottleId in loadedBottleIds
-    }
-
-    /** Drops the derived availability cache; recipes themselves stay cached. */
-    suspend fun invalidateAvailability() {
-        cacheLock.withLock { lastAvailability = null }
     }
 
     private companion object {

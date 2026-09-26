@@ -18,15 +18,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
+import com.example.smartbartender.domain.model.BottleCatalog
+import com.example.smartbartender.ui.common.text
+import com.example.smartbartender.ui.components.CocktailListSkeleton
+import com.example.smartbartender.ui.components.EmptyState
+import com.example.smartbartender.ui.components.ErrorState
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.MakeableCocktailRow
-import com.example.smartbartender.ui.components.CocktailListSkeleton
-import com.example.smartbartender.ui.components.ErrorState
-import com.example.smartbartender.ui.components.EmptyState
 import com.example.smartbartender.ui.components.SectionHeader
 import com.example.smartbartender.ui.theme.NeonAmber
 import com.example.smartbartender.ui.theme.NeonCyan
+import com.example.smartbartender.ui.theme.SmartBartenderTheme
 import com.example.smartbartender.ui.theme.TextSecondary
 
 /**
@@ -48,9 +55,9 @@ fun AvailableScreen(
 
             !state.hasBottles -> EmptyState(
                 icon = Icons.Outlined.Liquor,
-                title = "No bottles loaded",
-                message = "Load up to ${com.example.smartbartender.domain.model.BottleCatalog.MAX_SLOTS} bottles into the rack and the machine will work out what it can pour.",
-                actionLabel = "Load bottles",
+                title = stringResource(R.string.available_no_bottles_title),
+                message = stringResource(R.string.available_no_bottles_message, BottleCatalog.MAX_SLOTS),
+                actionLabel = stringResource(R.string.available_load_bottles),
                 onAction = onOpenBottles,
                 modifier = Modifier.padding(contentPadding),
             )
@@ -59,17 +66,17 @@ fun AvailableScreen(
 
             // Custom drinks don't need the network, so a failed fetch only blanks the screen
             // when there is nothing of the user's own to show either.
-            state.errorMessage != null && state.isEmptyResult -> ErrorState(
-                message = state.errorMessage,
+            state.loadError != null && state.isEmptyResult -> ErrorState(
+                message = state.loadError.text(),
                 onRetry = onRetry,
                 modifier = Modifier.padding(contentPadding),
             )
 
             state.isEmptyResult -> EmptyState(
                 icon = Icons.Outlined.SearchOff,
-                title = "Nothing pourable yet",
-                message = "None of the recipes match the bottles in the rack. With only ${com.example.smartbartender.domain.model.BottleCatalog.MAX_SLOTS} slots, a mixer or a citrus juice opens up the most drinks.",
-                actionLabel = "Adjust bottles",
+                title = stringResource(R.string.available_nothing_title),
+                message = stringResource(R.string.available_nothing_message, BottleCatalog.MAX_SLOTS),
+                actionLabel = stringResource(R.string.available_adjust_bottles),
                 onAction = onOpenBottles,
                 accent = NeonAmber,
                 modifier = Modifier.padding(contentPadding),
@@ -96,7 +103,7 @@ fun AvailableScreen(
                 if (state.canMakeNow.isNotEmpty()) {
                     item {
                         SectionHeader(
-                            title = "Can make now",
+                            title = stringResource(R.string.available_can_make_now),
                             trailing = "${state.canMakeNow.size}",
                             accent = NeonCyan,
                             modifier = Modifier.padding(top = 8.dp),
@@ -113,7 +120,7 @@ fun AvailableScreen(
                 if (state.almost.isNotEmpty()) {
                     item {
                         SectionHeader(
-                            title = "One bottle away",
+                            title = stringResource(R.string.available_one_bottle_away),
                             trailing = "${state.almost.size}",
                             accent = NeonAmber,
                             modifier = Modifier.padding(top = 16.dp),
@@ -143,19 +150,33 @@ private fun ReadyHeadline(
         Text(
             text = "$readyCount",
             style = MaterialTheme.typography.displaySmall,
-            color = if (led.enabled) led.primary else NeonCyan,
+            color = led.primary,
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            text = if (readyCount == 1) "cocktail ready to pour" else "cocktails ready to pour",
+            text = pluralStringResource(R.plurals.available_ready_to_pour, readyCount),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "$bottleCount of ${com.example.smartbartender.domain.model.BottleCatalog.MAX_SLOTS} slots filled",
+            text = stringResource(R.string.slots_filled, bottleCount, BottleCatalog.MAX_SLOTS),
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun AvailableScreenEmptyRackPreview() {
+    SmartBartenderTheme {
+        AvailableScreen(
+            state = AvailableUiState(isLoading = false, inventoryKnown = true),
+            led = LedState.Off,
+            onCocktailClick = {},
+            onOpenBottles = {},
+            onRetry = {},
         )
     }
 }

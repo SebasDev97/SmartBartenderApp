@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,11 +30,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.CocktailSummary
 import com.example.smartbartender.domain.model.DrinkLook
@@ -111,7 +114,7 @@ fun CocktailGridCard(
     GlassPanel(
         modifier = modifier,
         accent = accent,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+        contentPadding = PaddingValues(10.dp),
         onClick = onClick,
     ) {
         Column {
@@ -182,7 +185,7 @@ fun MakeableCocktailRow(
     GlassPanel(
         modifier = modifier.fillMaxWidth(),
         accent = accent,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+        contentPadding = PaddingValues(10.dp),
         onClick = onClick,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -214,9 +217,12 @@ fun MakeableCocktailRow(
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (makeable.canMakeNow) {
-                        MetaChip(text = "Ready to pour", accent = NeonCyan)
+                        MetaChip(text = stringResource(R.string.chip_ready_to_pour), accent = NeonCyan)
                     } else {
-                        MetaChip(text = "Missing: ${makeable.missingIngredients.first()}", accent = NeonAmber)
+                        MetaChip(
+                            text = stringResource(R.string.chip_missing, makeable.missingIngredients.first()),
+                            accent = NeonAmber,
+                        )
                     }
                 }
             }

@@ -3,13 +3,13 @@ package com.example.smartbartender.data.hardware.dto
 import com.example.smartbartender.domain.model.CalibrationPhase
 import com.example.smartbartender.domain.model.CalibrationResult
 import com.example.smartbartender.domain.model.CalibrationRun
-import com.example.smartbartender.domain.model.CalibrationStatus
 import com.example.smartbartender.domain.model.CleaningPhase
 import com.example.smartbartender.domain.model.CleaningRun
-import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.domain.model.JobStatus
 import com.example.smartbartender.domain.model.JobStep
+import com.example.smartbartender.domain.model.LedMode
 import com.example.smartbartender.domain.model.LedShow
+import com.example.smartbartender.domain.model.MachineBackend
 import com.example.smartbartender.domain.model.MachineFault
 import com.example.smartbartender.domain.model.MachineRunState
 import com.example.smartbartender.domain.model.MachineSlot
@@ -17,6 +17,7 @@ import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourItem
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
+import com.example.smartbartender.domain.model.RunStatus
 import com.example.smartbartender.domain.model.SensorReading
 import com.example.smartbartender.domain.model.StepKind
 import kotlinx.serialization.SerialName
@@ -26,9 +27,20 @@ import kotlinx.serialization.json.JsonObject
 /**
  * The wire format from `pi/API.md`, one class per documented object.
  *
- * Enum-ish fields stay [String] here and are mapped in the `toDomain()` helpers, so a value
- * a future firmware adds degrades to `UNKNOWN` instead of throwing mid-pour.
+ * Enum-ish fields stay [String] here and are mapped by [toEnumOr] in the `toDomain()`
+ * helpers, so a value a future firmware adds degrades to `UNKNOWN` instead of throwing
+ * mid-pour.
  */
+
+/**
+ * The enum constant whose name matches this wire value, ignoring case — the Pi sends
+ * `"waiting_glass"` for `WAITING_GLASS` — or [fallback] for anything this build doesn't know.
+ */
+private inline fun <reified E : Enum<E>> String.toEnumOr(fallback: E): E =
+    enumValues<E>().firstOrNull { it.name.equals(this, ignoreCase = true) } ?: fallback
+
+/** The wire spelling of an enum constant: the inverse of [toEnumOr]. */
+internal fun Enum<*>.wireName(): String = name.lowercase()
 
 @Serializable
 data class HealthDto(
@@ -64,9 +76,9 @@ data class LedDto(
     val mode: String = "off",
     val colorHex: String? = null,
     val brightness: Double = 0.6,
-    val cycleMillis: Int = 7000,
+    val cycleMillis: Int = LedShow.CYCLE_MILLIS,
 ) {
-    fun toDomain() = LedShow(enabled = enabled, mode = mode, cycleMillis = cycleMillis)
+    fun toDomain() = LedShow(enabled = enabled, mode = mode.toEnumOr(LedMode.UNKNOWN), cycleMillis = cycleMillis)
 }
 
 @Serializable
@@ -98,14 +110,7 @@ data class PourStepDto(
 ) {
     fun toDomain() = JobStep(
         index = index,
-        kind = when (kind) {
-            "glass" -> StepKind.GLASS
-            "pour" -> StepKind.POUR
-            "mix" -> StepKind.MIX
-            "manual" -> StepKind.MANUAL
-            "finish" -> StepKind.FINISH
-            else -> StepKind.UNKNOWN
-        },
+        kind = kind.toEnumOr(StepKind.UNKNOWN),
         label = label,
         detail = detail,
         pump = pump,
@@ -134,15 +139,7 @@ data class PourJobDto(
         jobId = jobId,
         drinkId = drinkId,
         drinkName = drinkName,
-        status = when (status) {
-            "queued" -> JobStatus.QUEUED
-            "running" -> JobStatus.RUNNING
-            "aborting" -> JobStatus.ABORTING
-            "aborted" -> JobStatus.ABORTED
-            "finished" -> JobStatus.FINISHED
-            "failed" -> JobStatus.FAILED
-            else -> JobStatus.UNKNOWN
-        },
+        status = status.toEnumOr(JobStatus.UNKNOWN),
         steps = steps.map(PourStepDto::toDomain),
         currentStepIndex = currentStepIndex,
         progress = progress.toFloat(),
@@ -192,13 +189,8 @@ data class MachineStatusDto(
         machineId = machineId,
         name = name,
         firmware = firmware,
-        backend = backend,
-        state = when (state) {
-            "idle" -> MachineRunState.IDLE
-            "busy" -> MachineRunState.BUSY
-            "fault" -> MachineRunState.FAULT
-            else -> MachineRunState.UNKNOWN
-        },
+        backend = backend.toEnumOr(MachineBackend.UNKNOWN),
+        state = state.toEnumOr(MachineRunState.UNKNOWN),
         pumpCount = pumpCount,
         maxPourMl = maxPourMl,
         slots = slots.map(SlotDto::toDomain),
@@ -216,7 +208,7 @@ data class MachineStatusDto(
 @Serializable
 data class SensorInfoDto(
     val referenceCm: Double? = null,
-    val glassDiameterMm: Double = 58.0,
+    val glassDiameterMm: Double = MachineSnapshot.DEFAULT_GLASS_DIAMETER_MM,
     val calibratedAtMs: Long? = null,
 )
 
@@ -252,21 +244,8 @@ data class CalibrationRunDto(
 ) {
     fun toDomain() = CalibrationRun(
         runId = runId,
-        status = when (status) {
-            "running" -> CalibrationStatus.RUNNING
-            "finished" -> CalibrationStatus.FINISHED
-            "failed" -> CalibrationStatus.FAILED
-            "aborted" -> CalibrationStatus.ABORTED
-            else -> CalibrationStatus.UNKNOWN
-        },
-        phase = when (phase) {
-            "waiting_glass" -> CalibrationPhase.WAITING_GLASS
-            "measuring" -> CalibrationPhase.MEASURING
-            "pumping" -> CalibrationPhase.PUMPING
-            "settling" -> CalibrationPhase.SETTLING
-            "done" -> CalibrationPhase.DONE
-            else -> CalibrationPhase.UNKNOWN
-        },
+        status = status.toEnumOr(RunStatus.UNKNOWN),
+        phase = phase.toEnumOr(CalibrationPhase.UNKNOWN),
         pumps = pumps,
         currentPump = currentPump,
         message = message,
@@ -297,19 +276,8 @@ data class CleaningRunDto(
 ) {
     fun toDomain() = CleaningRun(
         runId = runId,
-        status = when (status) {
-            "running" -> CleaningStatus.RUNNING
-            "finished" -> CleaningStatus.FINISHED
-            "failed" -> CleaningStatus.FAILED
-            "aborted" -> CleaningStatus.ABORTED
-            else -> CleaningStatus.UNKNOWN
-        },
-        phase = when (phase) {
-            "pumping" -> CleaningPhase.PUMPING
-            "pausing" -> CleaningPhase.PAUSING
-            "done" -> CleaningPhase.DONE
-            else -> CleaningPhase.UNKNOWN
-        },
+        status = status.toEnumOr(RunStatus.UNKNOWN),
+        phase = phase.toEnumOr(CleaningPhase.UNKNOWN),
         pumps = pumps,
         rounds = rounds,
         seconds = seconds,

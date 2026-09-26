@@ -11,7 +11,7 @@ data class MachineSnapshot(
     val machineId: String,
     val name: String,
     val firmware: String,
-    val backend: String,
+    val backend: MachineBackend,
     val state: MachineRunState,
     val pumpCount: Int,
     val maxPourMl: Double,
@@ -21,15 +21,29 @@ data class MachineSnapshot(
     val fault: MachineFault?,
     /** Sensor to the empty tray. Null until measured — the machine refuses to pour until then. */
     val sensorReferenceCm: Double? = null,
-    val glassDiameterMm: Double = 58.0,
+    val glassDiameterMm: Double = DEFAULT_GLASS_DIAMETER_MM,
     val calibratedAtMs: Long? = null,
     /** The calibration run in progress, if any. The machine is BUSY meanwhile. */
     val calibration: CalibrationRun? = null,
     /** The cleaning run in progress, if any. The machine is BUSY meanwhile. */
     val cleaning: CleaningRun? = null,
 ) {
-    val isSimulated: Boolean get() = backend == "simulated"
+    val isSimulated: Boolean get() = backend == MachineBackend.SIMULATED
+
+    /**
+     * Busy with something other than the caller's own run: a pour, or a calibration while
+     * the cleaning screen asks, say. [ownRunActive] is whether the caller's run is the reason.
+     */
+    fun busyWithOtherWork(ownRunActive: Boolean): Boolean = state == MachineRunState.BUSY && !ownRunActive
+
+    companion object {
+        /** The glass the Pi assumes until it reports its own. */
+        const val DEFAULT_GLASS_DIAMETER_MM = 58.0
+    }
 }
+
+/** What drives the pumps: `pi/API.md` lists `simulated` and `arduino`. */
+enum class MachineBackend { SIMULATED, ARDUINO, UNKNOWN }
 
 enum class MachineRunState { IDLE, BUSY, FAULT, UNKNOWN }
 
@@ -42,9 +56,20 @@ data class MachineSlot(
 
 data class LedShow(
     val enabled: Boolean,
-    val mode: String,
+    val mode: LedMode,
     val cycleMillis: Int,
-)
+) {
+    companion object {
+        /**
+         * One lap of the spectrum. The phone's strip preview and the machine's strip both use
+         * it, so they stay in phase.
+         */
+        const val CYCLE_MILLIS = 7000
+    }
+}
+
+/** `pi/API.md`: the app only ever sends [SPECTRUM] or [OFF]; the Pi sets [POUR] itself. */
+enum class LedMode { OFF, SOLID, SPECTRUM, POUR, UNKNOWN }
 
 data class MachineFault(
     val code: String,
@@ -96,7 +121,8 @@ data class PourJob(
     val waitingForGlass: Boolean = false,
 )
 
-enum class CalibrationStatus {
+/** How a calibration or cleaning run stands. Both kinds of run share one lifecycle. */
+enum class RunStatus {
     RUNNING, FINISHED, FAILED, ABORTED, UNKNOWN;
 
     val isTerminal: Boolean get() = this != RUNNING
@@ -107,7 +133,7 @@ enum class CalibrationPhase { WAITING_GLASS, MEASURING, PUMPING, SETTLING, DONE,
 /** One calibration run on the machine. Like a [PourJob], only ever replaced whole. */
 data class CalibrationRun(
     val runId: String,
-    val status: CalibrationStatus,
+    val status: RunStatus,
     val phase: CalibrationPhase,
     val pumps: List<Int>,
     val currentPump: Int?,
@@ -124,12 +150,6 @@ data class CalibrationResult(
     val seconds: Double,
 )
 
-enum class CleaningStatus {
-    RUNNING, FINISHED, FAILED, ABORTED, UNKNOWN;
-
-    val isTerminal: Boolean get() = this != RUNNING
-}
-
 enum class CleaningPhase { PUMPING, PAUSING, DONE, UNKNOWN }
 
 /**
@@ -138,7 +158,7 @@ enum class CleaningPhase { PUMPING, PAUSING, DONE, UNKNOWN }
  */
 data class CleaningRun(
     val runId: String,
-    val status: CleaningStatus,
+    val status: RunStatus,
     val phase: CleaningPhase,
     val pumps: List<Int>,
     val rounds: Int,
@@ -162,8 +182,10 @@ data class SensorReading(
     val referenceCm: Double?,
 )
 
-/** What the app asks the machine to pour.*/
-/** the Pi maps bottle ids to pumps itself, so a stale rack fails cleanly instead of wrongly. */
+/**
+ * What the app asks the machine to pour. Items name bottles, not pumps: the Pi maps bottle
+ * ids to pumps itself, so a stale rack fails cleanly instead of wrongly.
+ */
 data class PourRequest(
     val jobId: String,
     val drinkId: String?,
@@ -203,7 +225,7 @@ sealed interface ConnectionState {
 
     data class Connected(val snapshot: MachineSnapshot) : ConnectionState
 
-    data class Failed(val message: String) : ConnectionState
+    data class Failed(val error: MachineError) : ConnectionState
 
     val isConnected: Boolean get() = this is Connected
 

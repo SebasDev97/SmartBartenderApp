@@ -5,9 +5,8 @@ package com.example.smartbartender.domain.model
  *
  * TheCocktailDB's `strMeasure` is free text written by people, not a quantity:
  * `"1 1/2 oz"`, `"2-3 oz"`, `"4 cl"`, `"2 parts"`, `"Juice of 1 lime"`, `"Fill with cola"`,
- * `"2 dashes"`, `"Garnish"`, or simply absent. Until now the app only ever displayed it. A
- * pump needs a number of millilitres, so this is where the guessing is done — in one place,
- * explicitly, with tests.
+ * `"2 dashes"`, `"Garnish"`, or simply absent. A pump needs a number of millilitres, so this
+ * is where the guessing is done — in one place, explicitly, with tests.
  */
 sealed interface Measure {
 
@@ -47,6 +46,10 @@ object MeasureParser {
     private val FILL_WORDS = Regex("""\b(fill|top\s*up|topped|to\s*taste|as\s*needed)\b""")
     private val PARTS = Regex("""\bparts?\b""")
     private val JUICE_OF = Regex("""\bjuice\s+of\b""")
+    private val EXPANDED_MIXED = Regex("""(\d+)\s*\+\s*([\d.]+)""")
+    private val MIXED_FRACTION = Regex("""(\d+)\s+(\d+)\s*/\s*(\d+)""")
+    private val FRACTION = Regex("""(\d+)\s*/\s*(\d+)""")
+    private val DECIMAL = Regex("""\d+(\.\d+)?""")
 
     /** Fractions arrive as both `1 1/2` and `1½`, sometimes in the same recipe. */
     private val VULGAR_FRACTIONS = mapOf(
@@ -110,17 +113,17 @@ object MeasureParser {
      * topped up, an overflowing glass cannot be un-poured.
      */
     private fun firstNumber(text: String): Double? {
-        Regex("""(\d+)\s*\+\s*([\d.]+)""").find(text)?.let { match ->
+        EXPANDED_MIXED.find(text)?.let { match ->
             return match.groupValues[1].toDouble() + match.groupValues[2].toDouble()
         }
-        Regex("""(\d+)\s+(\d+)\s*/\s*(\d+)""").find(text)?.let { match ->
+        MIXED_FRACTION.find(text)?.let { match ->
             val (whole, numerator, denominator) = match.destructured
             return whole.toDouble() + numerator.toDouble() / denominator.toDouble()
         }
-        Regex("""(\d+)\s*/\s*(\d+)""").find(text)?.let { match ->
+        FRACTION.find(text)?.let { match ->
             val (numerator, denominator) = match.destructured
             return numerator.toDouble() / denominator.toDouble()
         }
-        return Regex("""\d+(\.\d+)?""").find(text)?.value?.toDoubleOrNull()
+        return DECIMAL.find(text)?.value?.toDoubleOrNull()
     }
 }

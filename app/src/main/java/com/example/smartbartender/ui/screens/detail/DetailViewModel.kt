@@ -1,24 +1,31 @@
 package com.example.smartbartender.ui.screens.detail
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.navigation.toRoute
 import com.example.smartbartender.data.hardware.BartenderMachine
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.ActiveJobStore
+import com.example.smartbartender.data.local.CustomDrinkStore
+import com.example.smartbartender.data.local.FavouritesStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.data.repository.CocktailRepository
 import com.example.smartbartender.di.appContainer
 import com.example.smartbartender.domain.model.Cocktail
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.CustomDrinks
 import com.example.smartbartender.domain.model.DEFAULT_MAX_POUR_ML
+import com.example.smartbartender.domain.model.PlanWarning
 import com.example.smartbartender.domain.model.PourPlan
 import com.example.smartbartender.domain.model.buildPourPlan
 import com.example.smartbartender.domain.model.toCocktail
-import com.example.smartbartender.ui.screens.available.userMessage
+import com.example.smartbartender.domain.model.toMachineError
+import com.example.smartbartender.ui.common.LoadError
+import com.example.smartbartender.ui.common.toLoadError
+import com.example.smartbartender.ui.navigation.DetailRoute
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,47 +38,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-/** One stage of the pour, as reported by the machine. */
-data class PourStep(
-    val label: String,
-    val detail: String? = null,
-    /** Something the human does — ice, a garnish, a salted rim. No pump can serve it. */
-    val isManual: Boolean = false,
-)
-
-data class PreparationState(
-    val isRunning: Boolean = false,
-    val isFinished: Boolean = false,
-    val isAborting: Boolean = false,
-    val steps: List<PourStep> = emptyList(),
-    val currentStepIndex: Int = 0,
-    val jobId: String? = null,
-    /** Volume-weighted progress from the machine. Authoritative when present. */
-    val remoteProgress: Float? = null,
-    val errorMessage: String? = null,
-    /** The machine is waiting for a glass under the nozzle before anything pours. */
-    val waitingForGlass: Boolean = false,
-) {
-    val progress: Float
-        get() = remoteProgress ?: when {
-            steps.isEmpty() -> 0f
-            isFinished -> 1f
-            else -> (currentStepIndex + 1).toFloat() / steps.size
-        }
-
-    val currentStep: PourStep? get() = steps.getOrNull(currentStepIndex)
-    val isIdle: Boolean get() = !isRunning && !isFinished
-}
-
 data class DetailUiState(
     val isLoading: Boolean = true,
     val cocktail: Cocktail? = null,
+    /** Why the recipe could not be shown. Pour problems live in [pour] instead. */
+    val loadError: LoadError? = null,
     val machineOnline: Boolean = false,
     val isFavourite: Boolean = false,
-    val preparation: PreparationState = PreparationState(),
-    /** Ingredients no pump can serve, or that needed a guess. Shown before pouring. */
-    val pourNotes: List<String> = emptyList(),
-    val errorMessage: String? = null,
+    val pour: PourPhase = PourPhase.Idle,
+    /** Ingredients a person adds by hand — ice, mint, a salted rim. Shown before pouring. */
+    val manualSteps: List<String> = emptyList(),
+    /** What the pour plan had to guess, or could not pour. Shown before pouring. */
+    val planWarnings: List<PlanWarning> = emptyList(),
     /** A drink the user made, which can be edited. */
     val isCustom: Boolean = false,
 )
@@ -80,14 +58,17 @@ data class DetailUiState(
  * Loads one recipe and drives the machine that pours it.
  *
  * The machine is the source of truth once a pour starts: this class posts a plan, then does
- * nothing but render the events that come back. That is why there is no timer here any more,
- * and why walking away from the screen mid-pour is harmless — the drink is still being made,
- * and [reattach] picks the overlay back up where it left off.
+ * nothing but render the events that come back. Walking away from the screen mid-pour is
+ * therefore harmless — the drink is still being made, and [reattach] picks the overlay back
+ * up where it left off.
  */
 class DetailViewModel(
     private val repository: CocktailRepository,
     private val cocktailId: String,
-    private val preferences: BartenderPreferences,
+    private val rack: RackStore,
+    private val activeJob: ActiveJobStore,
+    private val favourites: FavouritesStore,
+    private val customDrinks: CustomDrinkStore,
     private val machine: BartenderMachine,
 ) : ViewModel() {
 
@@ -112,15 +93,15 @@ class DetailViewModel(
             return
         }
         loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, loadError = null) }
             runCatching { repository.cocktailById(cocktailId) }
                 .onSuccess { cocktail ->
                     _uiState.update { it.copy(isLoading = false, cocktail = cocktail) }
-                    refreshPourNotes()
+                    showPlanPreview(rack.slots.first())
                     reattach()
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, errorMessage = throwable.userMessage()) }
+                    _uiState.update { it.copy(isLoading = false, loadError = throwable.toLoadError()) }
                 }
         }
     }
@@ -131,18 +112,16 @@ class DetailViewModel(
      */
     private fun observeCustomDrink(): Job = viewModelScope.launch {
         var reattached = false
-        preferences.customDrinks
+        customDrinks.customDrinks
             .map { drinks -> drinks.firstOrNull { it.id == cocktailId } }
             .distinctUntilChanged()
             .collect { drink ->
                 if (drink == null) {
-                    _uiState.update {
-                        it.copy(isLoading = false, cocktail = null, errorMessage = "This drink was deleted.")
-                    }
+                    _uiState.update { it.copy(isLoading = false, cocktail = null, loadError = LoadError.Deleted) }
                     return@collect
                 }
-                _uiState.update { it.copy(isLoading = false, cocktail = drink.toCocktail(), errorMessage = null) }
-                refreshPourNotes()
+                _uiState.update { it.copy(isLoading = false, cocktail = drink.toCocktail(), loadError = null) }
+                showPlanPreview(rack.slots.first())
                 if (!reattached) {
                     reattached = true
                     reattach()
@@ -150,20 +129,20 @@ class DetailViewModel(
             }
     }
 
+    /** The rack or the machine's glass changing changes what the plan would pour. */
     private fun observeMachine() {
         viewModelScope.launch {
-            combine(machine.connection, preferences.slots) { connection, slots -> connection to slots }
-                .collect { (connection, _) ->
-                    _uiState.update { it.copy(machineOnline = connection.isConnected) }
-                    refreshPourNotes()
-                }
+            combine(machine.connection, rack.slots, ::Pair).collect { (connection, slots) ->
+                _uiState.update { it.copy(machineOnline = connection.isConnected) }
+                showPlanPreview(slots, connection)
+            }
         }
     }
 
     private fun observeFavourite() {
         viewModelScope.launch {
-            preferences.favourites
-                .map { favourites -> favourites.any { it.id == cocktailId } }
+            favourites.favourites
+                .map { list -> list.any { it.id == cocktailId } }
                 .collect { favourite -> _uiState.update { it.copy(isFavourite = favourite) } }
         }
     }
@@ -171,7 +150,7 @@ class DetailViewModel(
     fun toggleFavourite() {
         val state = _uiState.value
         val cocktail = state.cocktail ?: return
-        viewModelScope.launch { preferences.setFavourite(cocktail.summary, !state.isFavourite) }
+        viewModelScope.launch { favourites.setFavourite(cocktail.summary, !state.isFavourite) }
     }
 
     /**
@@ -181,71 +160,50 @@ class DetailViewModel(
      * got to rather than start from zero or pretend nothing happened.
      */
     private suspend fun reattach() {
-        val activeJobId = preferences.activeJobId.first() ?: return
+        val activeJobId = activeJob.activeJobId.first() ?: return
         val job = machine.currentJob.value ?: return
         if (job.jobId != activeJobId || !job.status.isLive) return
         if (job.drinkId != null && job.drinkId != cocktailId) return
 
-        _uiState.update { it.copy(preparation = reducePour(it.preparation, job)) }
+        _uiState.update { it.copy(pour = reducePour(it.pour, job)) }
         follow(job.jobId)
     }
 
-    private fun refreshPourNotes() {
+    /** What the machine would be asked to do by hand or guess at, shown before pouring. */
+    private fun showPlanPreview(slots: List<String?>, connection: ConnectionState = machine.connection.value) {
         val cocktail = _uiState.value.cocktail ?: return
-        viewModelScope.launch {
-            val plan = plan(cocktail)
-            _uiState.update { it.copy(pourNotes = plan.manualSteps + plan.warnings) }
-        }
+        val plan = buildPourPlan(cocktail, slots, connection.maxPourMl())
+        _uiState.update { it.copy(manualSteps = plan.manualSteps, planWarnings = plan.warnings) }
     }
 
-    private suspend fun plan(cocktail: Cocktail): PourPlan = buildPourPlan(
-        cocktail = cocktail,
-        slots = preferences.slots.first(),
-        maxPourMl = (machine.connection.value as? ConnectionState.Connected)?.snapshot?.maxPourMl
-            ?: DEFAULT_MAX_POUR_ML,
-    )
+    private suspend fun plan(cocktail: Cocktail): PourPlan =
+        buildPourPlan(cocktail, rack.slots.first(), machine.connection.value.maxPourMl())
 
     fun startPreparation() {
         val cocktail = _uiState.value.cocktail ?: return
-        if (_uiState.value.preparation.isRunning) return
+        if (_uiState.value.pour is PourPhase.Pouring) return
 
         viewModelScope.launch {
             val plan = plan(cocktail)
             if (!plan.isPourable) {
-                _uiState.update {
-                    it.copy(
-                        preparation = PreparationState(
-                            errorMessage = "Nothing in this recipe can be poured by the machine",
-                            isFinished = true,
-                        ),
-                    )
-                }
+                _uiState.update { it.copy(pour = PourPhase.Failed(PourFailure.NothingPourable)) }
                 return@launch
             }
 
             // The app mints the job id, so retrying a request the machine already received
             // returns the running job instead of pouring a second drink.
             val jobId = UUID.randomUUID().toString()
-            _uiState.update {
-                it.copy(preparation = optimisticPreparation(plan, jobId, cocktail.glass))
-            }
-            preferences.setActiveJobId(jobId)
+            _uiState.update { it.copy(pour = PourPhase.Pouring.starting(jobId)) }
+            activeJob.setActiveJobId(jobId)
 
-            machine.startPour(plan.request.copy(jobId = jobId))
+            machine.startPour(plan.toRequest(jobId))
                 .onSuccess { job ->
-                    _uiState.update { it.copy(preparation = reducePour(it.preparation, job)) }
+                    _uiState.update { it.copy(pour = reducePour(it.pour, job)) }
                     follow(jobId)
                 }
                 .onFailure { throwable ->
-                    preferences.setActiveJobId(null)
-                    _uiState.update {
-                        it.copy(
-                            preparation = PreparationState(
-                                isFinished = true,
-                                errorMessage = throwable.message ?: "The machine refused that",
-                            ),
-                        )
-                    }
+                    activeJob.setActiveJobId(null)
+                    _uiState.update { it.copy(pour = PourPhase.Failed(PourFailure.Refused(throwable.toMachineError()))) }
                 }
         }
     }
@@ -258,50 +216,50 @@ class DetailViewModel(
                 .filterNotNull()
                 .collect { job ->
                     if (job.jobId != jobId) return@collect
-                    _uiState.update { it.copy(preparation = reducePour(it.preparation, job)) }
+                    _uiState.update { it.copy(pour = reducePour(it.pour, job)) }
                 }
         }
     }
 
     fun cancelPreparation() {
-        val jobId = _uiState.value.preparation.jobId
-        if (jobId == null) {
-            resetPreparation()
-            return
-        }
+        val pouring = _uiState.value.pour as? PourPhase.Pouring ?: return
         // Don't reset locally — the machine reports `aborting` and then `aborted`, and the
         // overlay should show that rather than pretending the pumps stopped instantly.
-        _uiState.update { it.copy(preparation = it.preparation.copy(isAborting = true)) }
+        _uiState.update { it.copy(pour = pouring.copy(aborting = true)) }
         viewModelScope.launch {
-            machine.abort(jobId).onFailure { resetPreparation() }
+            machine.abort(pouring.jobId).onFailure { resetPreparation() }
         }
     }
 
-    /** Dismisses the "your cocktail is ready" state and returns the screen to idle. */
+    /** Dismisses a finished or failed pour and returns the screen to idle. */
     fun acknowledgePreparation() {
         resetPreparation()
-        viewModelScope.launch { preferences.setActiveJobId(null) }
+        viewModelScope.launch { activeJob.setActiveJobId(null) }
     }
 
     private fun resetPreparation() {
         followJob?.cancel()
         followJob = null
-        _uiState.update { it.copy(preparation = PreparationState()) }
+        _uiState.update { it.copy(pour = PourPhase.Idle) }
     }
 
     companion object {
-        /** [SavedStateHandle] carries the `cocktailId` navigation argument. */
+        /** The cocktail id arrives as the [DetailRoute] navigation argument. */
         fun factory(): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                val handle: SavedStateHandle = createSavedStateHandle()
-                val id: String = requireNotNull(handle["cocktailId"]) { "cocktailId argument missing" }
+                val container = appContainer
                 DetailViewModel(
-                    appContainer.repository,
-                    id,
-                    appContainer.preferences,
-                    appContainer.machine,
+                    repository = container.repository,
+                    cocktailId = createSavedStateHandle().toRoute<DetailRoute>().cocktailId,
+                    rack = container.rack,
+                    activeJob = container.activeJob,
+                    favourites = container.favourites,
+                    customDrinks = container.customDrinks,
+                    machine = container.machine,
                 )
             }
         }
     }
 }
+
+private fun ConnectionState.maxPourMl(): Double = snapshotOrNull?.maxPourMl ?: DEFAULT_MAX_POUR_ML

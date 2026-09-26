@@ -17,9 +17,13 @@ data class BottleVolume(val bottleId: String, val name: String, val ml: Double) 
     val bottleEquivalents: Double get() = ml / STANDARD_BOTTLE_ML
 }
 
+/** The goals the Stats tab tracks. The screen words each one. */
+enum class MilestoneKind {
+    FIRST_POUR, REGULAR, PARTY_HOST, CENTURION, FIRST_LITRE, FIVE_LITRES, EXPLORER, CONNOISSEUR, DESIGNATED_DRIVER,
+}
+
 data class Milestone(
-    val title: String,
-    val detail: String,
+    val kind: MilestoneKind,
     /** 0..1, clamped. */
     val progress: Float,
 ) {
@@ -118,18 +122,20 @@ data class PourStats(
         }
 
         private fun milestones(cocktails: Int, totalMl: Double, recipes: Int, mocktails: Int) = listOf(
-            Milestone("First pour", "Make your first cocktail", fraction(cocktails, 1)),
-            Milestone("Regular", "Make 10 cocktails", fraction(cocktails, 10)),
-            Milestone("Party host", "Make 50 cocktails", fraction(cocktails, 50)),
-            Milestone("Centurion", "Make 100 cocktails", fraction(cocktails, 100)),
-            Milestone("First litre", "Pour 1 litre in total", (totalMl / 1000.0).toFloat().coerceIn(0f, 1f)),
-            Milestone("Five litres", "Pour 5 litres in total", (totalMl / 5000.0).toFloat().coerceIn(0f, 1f)),
-            Milestone("Explorer", "Try 10 different recipes", fraction(recipes, 10)),
-            Milestone("Connoisseur", "Try 25 different recipes", fraction(recipes, 25)),
-            Milestone("Designated driver", "Make 5 alcohol-free drinks", fraction(mocktails, 5)),
+            Milestone(MilestoneKind.FIRST_POUR, fraction(cocktails, 1)),
+            Milestone(MilestoneKind.REGULAR, fraction(cocktails, 10)),
+            Milestone(MilestoneKind.PARTY_HOST, fraction(cocktails, 50)),
+            Milestone(MilestoneKind.CENTURION, fraction(cocktails, 100)),
+            Milestone(MilestoneKind.FIRST_LITRE, fraction(totalMl, 1000.0)),
+            Milestone(MilestoneKind.FIVE_LITRES, fraction(totalMl, 5000.0)),
+            Milestone(MilestoneKind.EXPLORER, fraction(recipes, 10)),
+            Milestone(MilestoneKind.CONNOISSEUR, fraction(recipes, 25)),
+            Milestone(MilestoneKind.DESIGNATED_DRIVER, fraction(mocktails, 5)),
         )
 
-        private fun fraction(value: Int, target: Int): Float = (value.toFloat() / target).coerceIn(0f, 1f)
+        private fun fraction(value: Int, target: Int): Float = fraction(value.toDouble(), target.toDouble())
+
+        private fun fraction(value: Double, target: Double): Float = (value / target).toFloat().coerceIn(0f, 1f)
     }
 }
 

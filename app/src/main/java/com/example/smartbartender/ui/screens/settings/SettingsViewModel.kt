@@ -3,17 +3,26 @@ package com.example.smartbartender.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartbartender.data.hardware.BartenderMachine
-import com.example.smartbartender.data.hardware.HttpBartenderMachine
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.local.MachineSettingsStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.di.containerViewModelFactory
 import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.ConnectionState
 import com.example.smartbartender.domain.model.MachineAddress
+import com.example.smartbartender.domain.model.MachineError
+import com.example.smartbartender.domain.model.MachineSnapshot
+import com.example.smartbartender.domain.model.toMachineError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** What the Test button found at the typed-in address. */
+sealed interface ConnectionTest {
+    data class Found(val snapshot: MachineSnapshot) : ConnectionTest
+    data class Failed(val error: MachineError) : ConnectionTest
+}
 
 data class SettingsUiState(
     val ledShowEnabled: Boolean = true,
@@ -24,31 +33,15 @@ data class SettingsUiState(
     val machineEnabled: Boolean = false,
     val connection: ConnectionState = ConnectionState.Disabled,
     /** Result of the Test button, cleared when the address is edited. */
-    val testResult: String? = null,
+    val testResult: ConnectionTest? = null,
     val isTesting: Boolean = false,
     /** True while the user is typing an address that hasn't been saved yet. */
     val isEditing: Boolean = false,
-) {
-    val machineSummary: String
-        get() = when (val state = connection) {
-            ConnectionState.Disabled -> "Not connected"
-            ConnectionState.Connecting -> "Connecting…"
-            is ConnectionState.Failed -> state.message
-            is ConnectionState.Connected -> with(state.snapshot) {
-                "$name · ${if (isSimulated) "simulated" else "hardware"} · $pumpCount pumps"
-            }
-        }
-
-    val hardwareLinkLabel: String
-        get() = when (val state = connection) {
-            is ConnectionState.Connected -> if (state.snapshot.isSimulated) "Simulated machine" else "Live"
-            ConnectionState.Connecting -> "Connecting…"
-            else -> "Not connected"
-        }
-}
+)
 
 class SettingsViewModel(
-    private val preferences: BartenderPreferences,
+    private val settings: MachineSettingsStore,
+    rack: RackStore,
     private val machine: BartenderMachine,
 ) : ViewModel() {
 
@@ -58,9 +51,9 @@ class SettingsViewModel(
     init {
         viewModelScope.launch {
             combine(
-                preferences.ledShowEnabled,
-                preferences.loadedBottleIds,
-                preferences.machineAddress,
+                settings.ledShowEnabled,
+                rack.loadedBottleIds,
+                settings.machineAddress,
                 machine.connection,
             ) { led, ids, address, connection ->
                 SettingsUiState(
@@ -89,10 +82,10 @@ class SettingsViewModel(
 
     fun setLedShowEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            preferences.setLedShowEnabled(enabled)
+            settings.setLedShowEnabled(enabled)
             // The preference stays the source of truth for the on-screen strip; the machine
             // is simply told to match.
-            machine.setLed(enabled, HttpBartenderMachine.LED_CYCLE_MILLIS)
+            machine.setLed(enabled)
         }
     }
 
@@ -107,7 +100,7 @@ class SettingsViewModel(
     fun setMachineEnabled(enabled: Boolean) {
         viewModelScope.launch {
             val state = _uiState.value
-            preferences.setMachineAddress(state.machineHost, state.port, enabled)
+            settings.setMachineAddress(state.machineHost, state.port, enabled)
             _uiState.update { it.copy(isEditing = false) }
         }
     }
@@ -116,7 +109,7 @@ class SettingsViewModel(
     fun connect() {
         viewModelScope.launch {
             val state = _uiState.value
-            preferences.setMachineAddress(state.machineHost, state.port, enabled = true)
+            settings.setMachineAddress(state.machineHost, state.port, enabled = true)
             _uiState.update { it.copy(isEditing = false, testResult = null) }
         }
     }
@@ -125,24 +118,17 @@ class SettingsViewModel(
         viewModelScope.launch {
             val state = _uiState.value
             _uiState.update { it.copy(isTesting = true, testResult = null) }
-            val result = machine.testConnection(state.machineHost, state.port)
-            _uiState.update {
-                it.copy(
-                    isTesting = false,
-                    testResult = result.fold(
-                        onSuccess = { snapshot ->
-                            "Found ${snapshot.name} (${snapshot.backend}, firmware ${snapshot.firmware})"
-                        },
-                        onFailure = { error -> error.message ?: "No answer from that address" },
-                    ),
-                )
-            }
+            val result = machine.testConnection(state.machineHost, state.port).fold(
+                onSuccess = { ConnectionTest.Found(it) },
+                onFailure = { ConnectionTest.Failed(it.toMachineError()) },
+            )
+            _uiState.update { it.copy(isTesting = false, testResult = result) }
         }
     }
 
     companion object {
         val Factory = containerViewModelFactory { container ->
-            SettingsViewModel(container.preferences, container.machine)
+            SettingsViewModel(container.machineSettings, container.rack, container.machine)
         }
     }
 }

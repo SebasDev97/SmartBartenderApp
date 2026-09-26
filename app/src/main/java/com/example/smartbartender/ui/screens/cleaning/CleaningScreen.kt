@@ -4,18 +4,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,19 +18,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.domain.model.CleaningPhase
 import com.example.smartbartender.domain.model.CleaningRun
-import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.ui.components.GlassPanel
 import com.example.smartbartender.ui.components.LedState
 import com.example.smartbartender.ui.components.SectionHeader
-import com.example.smartbartender.ui.theme.ErrorRed
-import com.example.smartbartender.ui.theme.NeonCyan
-import com.example.smartbartender.ui.theme.NeonLime
+import com.example.smartbartender.ui.screens.machine.AccentCheckbox
+import com.example.smartbartender.ui.screens.machine.LastRunSummary
+import com.example.smartbartender.ui.screens.machine.MachineRunPage
+import com.example.smartbartender.ui.screens.machine.PumpRow
 import com.example.smartbartender.ui.theme.Obsidian
+import com.example.smartbartender.ui.theme.SmartBartenderTheme
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
 import kotlin.math.ceil
@@ -60,53 +58,29 @@ fun CleaningScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val accent = if (led.enabled) led.primary else NeonCyan
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = 16.dp,
-                end = 16.dp,
-                top = contentPadding.calculateTopPadding() + 8.dp,
-                bottom = contentPadding.calculateBottomPadding() + 24.dp,
-            ),
+    val accent = led.primary
+    MachineRunPage(
+        connected = state.connected,
+        busy = state.machineBusy,
+        disconnectedMessage = stringResource(R.string.cleaning_disconnected),
+        busyMessage = stringResource(R.string.cleaning_busy),
+        error = state.error,
+        contentPadding = contentPadding,
+        modifier = modifier,
     ) {
-        if (!state.connected) {
-            Text(
-                text = "Connect to the machine in Settings first — cleaning runs on the machine itself.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextSecondary,
-            )
-            return@Column
-        }
-        if (state.machineBusy) {
-            Text(
-                text = "The machine is busy. Cleaning is available again once it is done.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = NeonCyan,
-            )
-            Spacer(Modifier.height(16.dp))
-        }
-
-        SectionHeader(title = "1 · Prepare", accent = accent)
+        SectionHeader(title = stringResource(R.string.cleaning_step_prepare), accent = accent)
         Spacer(Modifier.height(10.dp))
         PreparePanel(state = state, accent = accent, onConfirm = actions.onContainerConfirmedChange)
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "2 · Pumps and timing", accent = accent)
+        SectionHeader(title = stringResource(R.string.cleaning_step_pumps), accent = accent)
         Spacer(Modifier.height(10.dp))
-        SettingsPanel(state = state, accent = accent, actions = actions)
+        PumpTimingPanel(state = state, accent = accent, actions = actions)
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(title = "3 · Rinse", accent = accent)
+        SectionHeader(title = stringResource(R.string.cleaning_step_rinse), accent = accent)
         Spacer(Modifier.height(10.dp))
         RunPanel(state = state, accent = accent, onStart = actions.onStart, onAbort = actions.onAbort)
-
-        state.errorMessage?.let { message ->
-            Spacer(Modifier.height(16.dp))
-            Text(text = message, style = MaterialTheme.typography.bodyMedium, color = ErrorRed)
-        }
     }
 }
 
@@ -115,21 +89,20 @@ private fun PreparePanel(state: CleaningUiState, accent: Color, onConfirm: (Bool
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column {
             Text(
-                text = "Swap each bottle for one of warm water. The glass sensor isn't used, " +
-                    "so put a jug or bowl under the nozzle that holds everything the pumps will run.",
+                text = stringResource(R.string.cleaning_prepare_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
+                AccentCheckbox(
                     checked = state.containerConfirmed,
                     onCheckedChange = onConfirm,
                     enabled = state.canEdit,
-                    colors = CheckboxDefaults.colors(checkedColor = accent, checkmarkColor = Obsidian),
+                    accent = accent,
                 )
                 Text(
-                    text = "A container for about ${state.estimatedMl.roundedMl()} ml is under the nozzle",
+                    text = stringResource(R.string.cleaning_container_confirm, state.estimatedMl.roundedMl()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -139,25 +112,26 @@ private fun PreparePanel(state: CleaningUiState, accent: Color, onConfirm: (Bool
 }
 
 @Composable
-private fun SettingsPanel(state: CleaningUiState, accent: Color, actions: CleaningActions) {
+private fun PumpTimingPanel(state: CleaningUiState, accent: Color, actions: CleaningActions) {
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column {
             state.pumps.forEach { row ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
+                    AccentCheckbox(
                         checked = row.selected,
                         onCheckedChange = { actions.onTogglePump(row.pump) },
                         enabled = state.canEdit,
-                        colors = CheckboxDefaults.colors(checkedColor = accent, checkmarkColor = Obsidian),
+                        accent = accent,
                     )
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = "Pump ${row.pump}",
+                            text = stringResource(R.string.cleaning_pump, row.pump),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = row.bottleName?.let { "Normally $it" } ?: "Normally empty",
+                            text = row.bottleName?.let { stringResource(R.string.cleaning_normally, it) }
+                                ?: stringResource(R.string.cleaning_normally_empty),
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
                         )
@@ -166,8 +140,8 @@ private fun SettingsPanel(state: CleaningUiState, accent: Color, actions: Cleani
             }
             Spacer(Modifier.height(12.dp))
             Stepper(
-                label = "Seconds per pump",
-                value = "${state.seconds} s",
+                label = stringResource(R.string.cleaning_seconds_per_pump),
+                value = stringResource(R.string.duration_seconds, state.seconds),
                 accent = accent,
                 enabled = state.canEdit,
                 canDecrease = state.seconds > CleaningViewModel.MIN_SECONDS,
@@ -176,8 +150,8 @@ private fun SettingsPanel(state: CleaningUiState, accent: Color, actions: Cleani
                 onIncrease = { actions.onSecondsChange(state.seconds + CleaningViewModel.SECONDS_STEP) },
             )
             Stepper(
-                label = "Rounds",
-                value = "${state.rounds}×",
+                label = stringResource(R.string.cleaning_rounds),
+                value = stringResource(R.string.cleaning_rounds_value, state.rounds),
                 accent = accent,
                 enabled = state.canEdit,
                 canDecrease = state.rounds > CleaningViewModel.MIN_ROUNDS,
@@ -187,7 +161,7 @@ private fun SettingsPanel(state: CleaningUiState, accent: Color, actions: Cleani
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "The pumps run one at a time, 1 → ${state.pumps.size}, then start over for each round.",
+                text = stringResource(R.string.cleaning_order_help, state.pumps.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
@@ -237,11 +211,11 @@ private fun RunPanel(state: CleaningUiState, accent: Color, onStart: () -> Unit,
             if (run != null && state.isRunning) {
                 RunProgress(run = run, accent = accent)
                 Spacer(Modifier.height(12.dp))
-                TextButton(onClick = onAbort) { Text("Stop cleaning", color = TextSecondary) }
+                TextButton(onClick = onAbort) { Text(stringResource(R.string.cleaning_stop), color = TextSecondary) }
             } else {
                 if (!state.containerConfirmed) {
                     Text(
-                        text = "Tick the container box in step 1 to start.",
+                        text = stringResource(R.string.cleaning_tick_container),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                     )
@@ -253,11 +227,19 @@ private fun RunPanel(state: CleaningUiState, accent: Color, onStart: () -> Unit,
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Obsidian),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text(if (state.isStarting) "Starting…" else "Start cleaning", fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(if (state.isStarting) R.string.run_starting else R.string.cleaning_start),
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
                 run?.let {
                     Spacer(Modifier.height(16.dp))
-                    RunSummary(run = it)
+                    LastRunSummary(
+                        status = it.status,
+                        message = it.message,
+                        fault = it.error,
+                        stoppedText = stringResource(R.string.cleaning_stopped),
+                    )
                 }
             }
         }
@@ -268,9 +250,9 @@ private fun RunPanel(state: CleaningUiState, accent: Color, onStart: () -> Unit,
 private fun RunProgress(run: CleaningRun, accent: Color) {
     Text(
         text = when {
-            run.currentPump == null -> "Starting"
-            run.phase == CleaningPhase.PAUSING -> "Round ${run.currentRound} of ${run.rounds}"
-            else -> "Round ${run.currentRound} of ${run.rounds} · pump ${run.currentPump}"
+            run.currentPump == null -> stringResource(R.string.cleaning_progress_starting)
+            run.phase == CleaningPhase.PAUSING -> stringResource(R.string.cleaning_round, run.currentRound ?: 0, run.rounds)
+            else -> stringResource(R.string.cleaning_round_pump, run.currentRound ?: 0, run.rounds, run.currentPump)
         },
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
@@ -286,15 +268,23 @@ private fun RunProgress(run: CleaningRun, accent: Color) {
     )
 }
 
-@Composable
-private fun RunSummary(run: CleaningRun) {
-    val (text, color) = when (run.status) {
-        CleaningStatus.FINISHED -> run.message to NeonLime
-        CleaningStatus.ABORTED -> "Stopped — put your bottles back when you're done" to TextSecondary
-        else -> (run.error?.message ?: run.message) to ErrorRed
-    }
-    Text(text = "Last run: $text", style = MaterialTheme.typography.bodyMedium, color = color)
-}
-
 /** Up to the next 50 ml — it is an estimate of a container size, so err on the big side. */
 private fun Double.roundedMl(): Int = (ceil(this / 50) * 50).toInt().coerceAtLeast(50)
+
+@Preview
+@Composable
+private fun CleaningScreenPreview() {
+    SmartBartenderTheme {
+        CleaningScreen(
+            state = CleaningUiState(
+                connected = true,
+                pumps = listOf(
+                    PumpRow(pump = 1, bottleName = "Vodka", mlPerSecond = 12.5, selected = true),
+                    PumpRow(pump = 2, bottleName = null, mlPerSecond = 12.5, selected = false),
+                ),
+            ),
+            led = LedState.Off,
+            actions = CleaningActions({}, {}, {}, {}, {}, {}),
+        )
+    }
+}

@@ -18,10 +18,5 @@ data class Bottle(
     val matchNames: List<String> get() = listOf(apiName, displayName) + aliases
 }
 
-enum class BottleCategory(val label: String) {
-    SPIRIT("Spirits"),
-    LIQUEUR("Liqueurs"),
-    JUICE("Juices"),
-    MIXER("Mixers & syrups"),
-    DAIRY("Dairy & cream"),
-}
+/** Declaration order is the order the Bottles tab lists them in. */
+enum class BottleCategory { SPIRIT, LIQUEUR, JUICE, MIXER, DAIRY }

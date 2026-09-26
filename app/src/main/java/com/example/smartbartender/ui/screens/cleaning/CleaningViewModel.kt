@@ -4,30 +4,27 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartbartender.data.hardware.BartenderMachine
 import com.example.smartbartender.di.containerViewModelFactory
-import com.example.smartbartender.domain.model.BottleCatalog
 import com.example.smartbartender.domain.model.CleaningRun
-import com.example.smartbartender.domain.model.CleaningStatus
 import com.example.smartbartender.domain.model.ConnectionState
-import com.example.smartbartender.domain.model.MachineRunState
+import com.example.smartbartender.domain.model.MachineError
+import com.example.smartbartender.domain.model.RunStatus
+import com.example.smartbartender.domain.model.toMachineError
+import com.example.smartbartender.ui.screens.machine.PumpRow
+import com.example.smartbartender.ui.screens.machine.PumpSelection
+import com.example.smartbartender.ui.screens.machine.pumpRows
+import com.example.smartbartender.ui.screens.machine.selectedPumpsOrAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-/** One pump on the cleaning screen. */
-data class CleaningPumpRow(
-    val pump: Int,
-    /** The bottle the rack lists on this pump — it should be water for now. Null for an empty slot. */
-    val bottleName: String?,
-    val mlPerSecond: Double,
-    val selected: Boolean,
-)
 
 data class CleaningUiState(
     val connected: Boolean = false,
     /** A pour or a calibration is running, so nothing here may drive a pump. */
     val machineBusy: Boolean = false,
-    val pumps: List<CleaningPumpRow> = emptyList(),
+    /** The rack's bottle on each pump — it should be water for now. */
+    val pumps: List<PumpRow> = emptyList(),
     val seconds: Int = CleaningViewModel.DEFAULT_SECONDS,
     val rounds: Int = CleaningViewModel.DEFAULT_ROUNDS,
     /** The user has said a container big enough stands under the nozzle. No sensor checks it. */
@@ -35,10 +32,10 @@ data class CleaningUiState(
     /** The run in progress, or the last one — pushed by the machine, never invented here. */
     val run: CleaningRun? = null,
     val isStarting: Boolean = false,
-    /** The last command the machine refused, already worded for a person. */
-    val errorMessage: String? = null,
+    /** The last command the machine refused. */
+    val error: MachineError? = null,
 ) {
-    val isRunning: Boolean get() = run?.status == CleaningStatus.RUNNING
+    val isRunning: Boolean get() = run?.status == RunStatus.RUNNING
 
     /** Roughly what ends up in the container, from each pump's calibrated flow. */
     val estimatedMl: Double get() = pumps.filter { it.selected }.sumOf { it.mlPerSecond } * seconds * rounds
@@ -61,21 +58,17 @@ class CleaningViewModel(private val machine: BartenderMachine) : ViewModel() {
     private val _uiState = MutableStateFlow(CleaningUiState())
     val uiState = _uiState.asStateFlow()
 
-    /** Pumps the user has unticked. Unticked rather than ticked, so a new pump starts selected. */
-    private val deselected = MutableStateFlow<Set<Int>>(emptySet())
+    private val selection = PumpSelection()
 
     init {
         viewModelScope.launch {
-            machine.connection.collect { connection -> render(connection, deselected.value) }
-        }
-        viewModelScope.launch {
-            deselected.collect { render(machine.connection.value, it) }
+            combine(machine.connection, selection.deselectedPumps, ::Pair).collect { (connection, deselected) ->
+                render(connection, deselected)
+            }
         }
     }
 
-    fun togglePump(pump: Int) {
-        deselected.update { if (pump in it) it - pump else it + pump }
-    }
+    fun togglePump(pump: Int) = selection.toggle(pump)
 
     fun setSeconds(seconds: Int) {
         _uiState.update { it.copy(seconds = seconds.coerceIn(MIN_SECONDS, MAX_SECONDS)) }
@@ -92,11 +85,10 @@ class CleaningViewModel(private val machine: BartenderMachine) : ViewModel() {
     fun start() {
         val state = _uiState.value
         if (!state.canStart) return
-        val pumps = state.pumps.filter { it.selected }.map { it.pump }
         viewModelScope.launch {
-            _uiState.update { it.copy(isStarting = true, errorMessage = null) }
+            _uiState.update { it.copy(isStarting = true, error = null) }
             val result = machine.startCleaning(
-                pumps = pumps.takeIf { it.size < state.pumps.size },
+                pumps = state.pumps.selectedPumpsOrAll(),
                 seconds = state.seconds.toDouble(),
                 rounds = state.rounds,
             )
@@ -105,7 +97,7 @@ class CleaningViewModel(private val machine: BartenderMachine) : ViewModel() {
                     isStarting = false,
                     // The container fills up; ask again before the next run.
                     containerConfirmed = if (result.isSuccess) false else it.containerConfirmed,
-                    errorMessage = result.exceptionOrNull()?.message,
+                    error = result.exceptionOrNull()?.toMachineError(),
                 )
             }
         }
@@ -114,26 +106,19 @@ class CleaningViewModel(private val machine: BartenderMachine) : ViewModel() {
     fun abort() {
         viewModelScope.launch {
             val result = machine.abortCleaning()
-            _uiState.update { it.copy(errorMessage = result.exceptionOrNull()?.message) }
+            _uiState.update { it.copy(error = result.exceptionOrNull()?.toMachineError()) }
         }
     }
 
     private fun render(connection: ConnectionState, deselected: Set<Int>) {
-        val snapshot = (connection as? ConnectionState.Connected)?.snapshot
+        val snapshot = connection.snapshotOrNull
         val run = snapshot?.cleaning
         _uiState.update { current ->
             current.copy(
                 connected = snapshot != null,
-                machineBusy = snapshot?.state == MachineRunState.BUSY && run?.status != CleaningStatus.RUNNING,
+                machineBusy = snapshot?.busyWithOtherWork(ownRunActive = run?.status == RunStatus.RUNNING) == true,
                 run = run,
-                pumps = snapshot?.slots.orEmpty().map { slot ->
-                    CleaningPumpRow(
-                        pump = slot.pump,
-                        bottleName = slot.bottleId?.let { id -> BottleCatalog.byId(id)?.displayName ?: id },
-                        mlPerSecond = slot.mlPerSecond,
-                        selected = slot.pump !in deselected,
-                    )
-                },
+                pumps = snapshot.pumpRows(deselected),
             )
         }
     }

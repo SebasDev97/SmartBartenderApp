@@ -1,9 +1,5 @@
 package com.example.smartbartender.domain.model
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
-
 /** How a pour this phone started ended up. Only terminal states are ever recorded. */
 enum class PourOutcome { FINISHED, ABORTED, FAILED }
 
@@ -62,7 +58,7 @@ data class PourRecord(
 }
 
 /**
- * The pours this phone has started, oldest first, stored as one JSON string.
+ * The pours this phone has started, oldest first.
  *
  * Capped at [MAX_RECORDS] so the file stays small; past that the oldest pours roll off and
  * the lifetime totals become "the last thousand drinks", which is plenty for a home bar.
@@ -71,40 +67,9 @@ object PourHistory {
 
     const val MAX_RECORDS = 1000
 
-    @Serializable
-    private data class Entry(
-        val jobId: String,
-        val drinkId: String? = null,
-        val drinkName: String = "",
-        val outcome: String = "",
-        val finishedAtMs: Long = 0,
-        val ml: Map<String, Double> = emptyMap(),
-    )
-
-    private val json = Json { ignoreUnknownKeys = true }
-    private val serializer = ListSerializer(Entry.serializer())
-
     /** Adds [record] at the end. A job already held is a no-op, so replayed frames never double-count. */
     fun append(records: List<PourRecord>, record: PourRecord): List<PourRecord> {
         if (records.any { it.jobId == record.jobId }) return records
         return (records + record).takeLast(MAX_RECORDS)
-    }
-
-    fun encode(records: List<PourRecord>): String = json.encodeToString(
-        serializer,
-        records.map { Entry(it.jobId, it.drinkId, it.drinkName, it.outcome.name, it.finishedAtMs, it.mlByBottle) },
-    )
-
-    /** A blank or unreadable value degrades to no history rather than a crash. */
-    fun parse(stored: String): List<PourRecord> {
-        if (stored.isBlank()) return emptyList()
-        return runCatching { json.decodeFromString(serializer, stored) }
-            .getOrDefault(emptyList())
-            .mapNotNull { entry ->
-                val outcome = PourOutcome.entries.firstOrNull { it.name == entry.outcome }
-                if (entry.jobId.isBlank() || outcome == null) return@mapNotNull null
-                PourRecord(entry.jobId, entry.drinkId, entry.drinkName, outcome, entry.finishedAtMs, entry.ml)
-            }
-            .distinctBy { it.jobId }
     }
 }

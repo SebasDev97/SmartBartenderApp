@@ -9,19 +9,28 @@ import com.example.smartbartender.data.hardware.dto.LedRequestDto
 import com.example.smartbartender.data.hardware.dto.SlotAssignmentDto
 import com.example.smartbartender.data.hardware.dto.SlotsRequestDto
 import com.example.smartbartender.data.hardware.dto.toDto
-import com.example.smartbartender.data.local.BartenderPreferences
+import com.example.smartbartender.data.hardware.dto.wireName
+import com.example.smartbartender.data.local.MachineSettingsStore
+import com.example.smartbartender.data.local.RackStore
 import com.example.smartbartender.domain.model.CalibrationRun
 import com.example.smartbartender.domain.model.CleaningRun
 import com.example.smartbartender.domain.model.ConnectionState
+import com.example.smartbartender.domain.model.LedMode
+import com.example.smartbartender.domain.model.LedShow
 import com.example.smartbartender.domain.model.MachineAddress
+import com.example.smartbartender.domain.model.MachineError
+import com.example.smartbartender.domain.model.MachineException
 import com.example.smartbartender.domain.model.MachineSnapshot
 import com.example.smartbartender.domain.model.PourJob
 import com.example.smartbartender.domain.model.PourRequest
 import com.example.smartbartender.domain.model.SensorReading
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.launchIn
@@ -35,8 +44,6 @@ import retrofit2.HttpException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.emptyFlow
 
 private const val TAG = "BartenderMachine"
 
@@ -54,7 +61,8 @@ private val RECONNECT_BACKOFF = listOf(1, 2, 4, 8, 15)
 class HttpBartenderMachine(
     private val api: BartenderApi,
     private val client: OkHttpClient,
-    private val preferences: BartenderPreferences,
+    private val rack: RackStore,
+    private val settings: MachineSettingsStore,
     private val scope: CoroutineScope,
 ) : BartenderMachine {
 
@@ -67,9 +75,10 @@ class HttpBartenderMachine(
     @Volatile
     private var address: MachineAddress = MachineAddress("", MachineAddress.DEFAULT_PORT, enabled = false)
 
-    init {
-        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-        preferences.machineAddress
+    /** Follows the configured address: connects, reconnects with back-off, and folds every event in. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun start() {
+        settings.machineAddress
             .onEach { address = it }
             .flatMapLatest { target ->
                 if (!target.isConfigured) {
@@ -83,10 +92,8 @@ class HttpBartenderMachine(
                             Log.i(TAG, "connecting to ${target.httpBase}")
                         }
                         .retryWhen { cause, attempt ->
-                            _connection.value = ConnectionState.Failed(cause.friendlyMessage())
-                            val wait = RECONNECT_BACKOFF[
-                                minOf(attempt.toInt(), RECONNECT_BACKOFF.lastIndex),
-                            ]
+                            _connection.value = ConnectionState.Failed(cause.asMachineError())
+                            val wait = RECONNECT_BACKOFF[minOf(attempt.toInt(), RECONNECT_BACKOFF.lastIndex)]
                             delay(wait.seconds)
                             true
                         }
@@ -152,23 +159,23 @@ class HttpBartenderMachine(
 
     private suspend fun resync() {
         runCatching {
-            pushSlots(preferences.slots.first())
-            setLed(preferences.ledShowEnabled.first(), cycleMillis = LED_CYCLE_MILLIS)
+            pushSlots(rack.slots.first())
+            setLed(settings.ledShowEnabled.first())
         }.onFailure { Log.w(TAG, "could not resync the machine: ${it.message}") }
     }
 
     // ------------------------------------------------------------------ commands
 
     override suspend fun testConnection(host: String, port: Int): Result<MachineSnapshot> {
-        val base = MachineAddress(host.trim(), port, enabled = true)
-        if (host.isBlank()) return Result.failure(IOException("Enter the machine's address first"))
-        return runCatching {
-            api.health("${base.httpBase}/healthz")
-            api.status("${base.httpBase}/api/v1/status").toDomain()
-        }.mapError()
+        if (host.isBlank()) return Result.failure(MachineException(MachineError.MissingAddress))
+        val base = MachineAddress(host.trim(), port, enabled = true).httpBase
+        return runMachineCall {
+            api.health("$base/healthz")
+            api.status("$base/api/v1/status").toDomain()
+        }
     }
 
-    override suspend fun pushSlots(slots: List<String?>): Result<Unit> = command { base ->
+    override suspend fun pushSlots(slots: List<String?>): Result<Unit> = call { base ->
         api.putSlots(
             url = "$base/api/v1/slots",
             body = SlotsRequestDto(
@@ -179,112 +186,99 @@ class HttpBartenderMachine(
         )
     }
 
-    override suspend fun startPour(request: PourRequest): Result<PourJob> {
-        val base = address.takeIf { it.isConfigured }?.httpBase
-            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
-        return runCatching {
-            api.startPour(
-                url = "$base/api/v1/pours",
-                idempotencyKey = request.jobId,
-                body = request.toDto(),
-            ).toDomain().also { _currentJob.value = it }
-        }.mapError()
+    override suspend fun startPour(request: PourRequest): Result<PourJob> = call { base ->
+        api.startPour(
+            url = "$base/api/v1/pours",
+            idempotencyKey = request.jobId,
+            body = request.toDto(),
+        ).toDomain().also { _currentJob.value = it }
     }
 
-    override suspend fun abort(jobId: String): Result<Unit> = command { base ->
+    override suspend fun abort(jobId: String): Result<Unit> = call { base ->
         api.abort("$base/api/v1/pours/$jobId/abort")
     }
 
-    override suspend fun fetchJob(jobId: String): Result<PourJob> {
-        val base = address.takeIf { it.isConfigured }?.httpBase
-            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
-        return runCatching { api.pour("$base/api/v1/pours/$jobId").toDomain() }.mapError()
+    override suspend fun fetchJob(jobId: String): Result<PourJob> = call { base ->
+        api.pour("$base/api/v1/pours/$jobId").toDomain()
     }
 
-    override suspend fun setLed(enabled: Boolean, cycleMillis: Int): Result<Unit> = command { base ->
+    override suspend fun setLed(enabled: Boolean): Result<Unit> = call { base ->
         api.putLed(
             url = "$base/api/v1/led",
             body = LedRequestDto(
                 enabled = enabled,
-                mode = if (enabled) "spectrum" else "off",
-                cycleMillis = cycleMillis,
+                mode = (if (enabled) LedMode.SPECTRUM else LedMode.OFF).wireName(),
+                cycleMillis = LedShow.CYCLE_MILLIS,
             ),
         )
     }
 
-    override suspend fun jog(pump: Int, seconds: Double): Result<Unit> = command { base ->
+    override suspend fun jog(pump: Int, seconds: Double): Result<Unit> = call { base ->
         api.jog("$base/api/v1/pumps/$pump/jog", JogRequestDto(seconds))
     }
 
-    override suspend fun readSensor(): Result<SensorReading> = query { base ->
+    override suspend fun readSensor(): Result<SensorReading> = call { base ->
         api.sensor("$base/api/v1/sensor").toDomain()
     }
 
-    override suspend fun measureReference(): Result<SensorReading> = query { base ->
+    override suspend fun measureReference(): Result<SensorReading> = call { base ->
         api.measureReference("$base/api/v1/sensor/reference").toDomain()
     }
 
     override suspend fun startCalibration(pumps: List<Int>?, seconds: Double?): Result<CalibrationRun> =
-        query { base ->
+        call { base ->
             api.startCalibration("$base/api/v1/calibration", CalibrationRequestDto(pumps, seconds))
                 .toDomain()
                 .also { run -> updateSnapshot { it.copy(calibration = run) } }
         }
 
-    override suspend fun abortCalibration(): Result<Unit> = command { base ->
+    override suspend fun abortCalibration(): Result<Unit> = call { base ->
         api.abortCalibration("$base/api/v1/calibration/abort")
     }
 
     override suspend fun startCleaning(pumps: List<Int>?, seconds: Double?, rounds: Int?): Result<CleaningRun> =
-        query { base ->
+        call { base ->
             api.startCleaning("$base/api/v1/cleaning", CleaningRequestDto(pumps, seconds, rounds))
                 .toDomain()
                 .also { run -> updateSnapshot { it.copy(cleaning = run) } }
         }
 
-    override suspend fun abortCleaning(): Result<Unit> = command { base ->
+    override suspend fun abortCleaning(): Result<Unit> = call { base ->
         api.abortCleaning("$base/api/v1/cleaning/abort")
     }
 
-    private inline fun <T> query(block: (base: String) -> T): Result<T> {
+    /** Runs [block] against the configured machine's base URL, or fails with [MachineError.NotConfigured]. */
+    private inline fun <T> call(block: (base: String) -> T): Result<T> {
         val base = address.takeIf { it.isConfigured }?.httpBase
-            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
-        return runCatching { block(base) }.mapError()
+            ?: return Result.failure(MachineException(MachineError.NotConfigured))
+        return runMachineCall { block(base) }
     }
+}
 
-    private inline fun command(block: (base: String) -> Unit): Result<Unit> {
-        val base = address.takeIf { it.isConfigured }?.httpBase
-            ?: return Result.failure(IOException(OFFLINE_MESSAGE))
-        return runCatching { block(base) }.mapError()
-    }
+/** Runs [block], turning whatever it throws into a [MachineException] with a typed reason. */
+private inline fun <T> runMachineCall(block: () -> T): Result<T> =
+    runCatching(block).recoverCatching { throw MachineException(it.asMachineError(), it) }
 
-    companion object {
-        /** Matches `rememberLedState`'s default, so the phone and the strip stay in phase. */
-        const val LED_CYCLE_MILLIS = 7000
-
-        private const val OFFLINE_MESSAGE = "The machine is not connected"
-    }
+private fun Throwable.asMachineError(): MachineError = when (this) {
+    is MachineException -> error
+    is MachineSocketException -> MachineError.ConnectionLost(message)
+    is HttpException -> refusal()
+    is SocketTimeoutException -> MachineError.Timeout
+    is IOException -> MachineError.Unreachable
+    else -> MachineError.Unexpected(message)
 }
 
 /**
- * Turns whatever went wrong into something worth showing a person.
- *
- * The machine answers a refusal with `{"error": {"code", "message"}}` (see `pi/API.md`), and
- * those messages are already written for a human — "Tequila (tequila) is not loaded" beats
- * "HTTP 422".
+ * The machine answers a refusal with `{"error": {"code", "message"}}` (see `pi/API.md`); keep
+ * both so the UI can show the Pi's own sentence and callers can branch on the code.
  */
-private fun <T> Result<T>.mapError(): Result<T> =
-    recoverCatching { throwable -> throw IOException(throwable.friendlyMessage(), throwable) }
-
-private fun Throwable.friendlyMessage(): String = when (this) {
-    is MachineSocketException -> message ?: "Connection lost"
-    is HttpException -> machineMessage() ?: "Machine refused that (HTTP ${code()})"
-    is SocketTimeoutException -> "The machine did not answer"
-    is IOException -> "Machine unreachable"
-    else -> message ?: "Machine error"
+private fun HttpException.refusal(): MachineError.Refused {
+    val body = runCatching {
+        MachineNetworkModule.json.decodeFromString<ErrorResponseDto>(response()?.errorBody()?.string().orEmpty()).error
+    }.getOrNull()
+    return MachineError.Refused(
+        code = body?.code?.takeIf { it.isNotBlank() },
+        message = body?.message?.takeIf { it.isNotBlank() },
+        httpStatus = code(),
+    )
 }
-
-private fun HttpException.machineMessage(): String? = runCatching {
-    val body = response()?.errorBody()?.string().orEmpty()
-    MachineNetworkModule.json.decodeFromString<ErrorResponseDto>(body).error.message.takeIf { it.isNotBlank() }
-}.getOrNull()

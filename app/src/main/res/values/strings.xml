@@ -1,3 +1,317 @@
 <resources>
     <string name="app_name">Smart Bartender</string>
+
+    <!-- Shared -->
+    <string name="action_retry">Retry</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_back">Back</string>
+    <string name="error_title_connection_lost">Connection lost</string>
+    <string name="error_offline">No internet connection. Check your network and try again.</string>
+    <string name="error_recipes_timeout">TheCocktailDB took too long to answer.</string>
+    <string name="error_recipes_generic">Something went wrong while loading recipes.</string>
+    <string name="error_drink_deleted">This drink was deleted.</string>
+    <string name="favourite_add">Add to favourites</string>
+    <string name="favourite_remove">Remove from favourites</string>
+    <string name="chip_ready_to_pour">Ready to pour</string>
+    <string name="chip_missing">Missing: %1$s</string>
+    <string name="volume_ml">%1$d ml</string>
+    <string name="volume_litres">%1$.1f L</string>
+
+    <!-- Machine errors -->
+    <string name="machine_error_not_connected">The machine is not connected</string>
+    <string name="machine_error_missing_address">Enter the machine\'s address first</string>
+    <string name="machine_error_timeout">The machine did not answer</string>
+    <string name="machine_error_unreachable">Machine unreachable</string>
+    <string name="machine_error_connection_lost">Connection lost</string>
+    <string name="machine_error_refused">Machine refused that (HTTP %1$d)</string>
+    <string name="machine_error_unexpected">Machine error</string>
+
+    <!-- Domain labels -->
+    <string name="category_spirits">Spirits</string>
+    <string name="category_liqueurs">Liqueurs</string>
+    <string name="category_juices">Juices</string>
+    <string name="category_mixers">Mixers &amp; syrups</string>
+    <string name="category_dairy">Dairy &amp; cream</string>
+    <string name="alcohol_alcoholic">Alcoholic</string>
+    <string name="alcohol_non_alcoholic">Non alcoholic</string>
+    <string name="alcohol_optional">Optional alcohol</string>
+    <string name="backend_simulated">simulated</string>
+    <string name="backend_hardware">hardware</string>
+    <string name="backend_unknown">unknown backend</string>
+
+    <!-- Detail -->
+    <string name="detail_edit_drink">Edit drink</string>
+    <string name="detail_make_cocktail">Make this cocktail</string>
+    <string name="detail_machine_offline">Machine offline — set its address in Settings.</string>
+    <string name="detail_you_add">You\'ll add: %1$s</string>
+    <string name="detail_ingredients">Ingredients</string>
+    <string name="detail_no_ingredients">This recipe lists no ingredients.</string>
+    <string name="detail_preparation">Preparation</string>
+    <string name="detail_no_instructions">No instructions provided for this cocktail.</string>
+    <string name="detail_to_taste">to taste</string>
+    <string name="plan_not_loaded">%1$s is not loaded — add it by hand</string>
+    <string name="plan_no_measure">%1$s has no measure — pouring %2$d ml</string>
+    <string name="plan_scaled">Scaled down to %1$d ml to fit the glass</string>
+
+    <!-- Pour overlay -->
+    <string name="pour_ready">Ready</string>
+    <string name="pour_served">%1$s is served. Enjoy.</string>
+    <string name="pour_failed_title">Not poured</string>
+    <string name="pour_nothing_pourable">Nothing in this recipe can be poured by the machine</string>
+    <string name="pour_stopped_unexpectedly">The machine stopped unexpectedly</string>
+    <string name="pour_place_glass">Place a glass under the nozzle</string>
+    <string name="pour_waiting_detail">Pouring starts as soon as the machine sees an empty glass</string>
+    <string name="pour_waiting_for_glass">Waiting for a glass</string>
+    <string name="pour_step_volume">%1$d / %2$d ml</string>
+    <string name="pour_step_measured">%1$s · measured</string>
+    <string name="pour_percent">%1$d%%</string>
+    <string name="pour_abort">Abort pour</string>
+    <string name="pour_stopping">Stopping…</string>
+    <string name="pour_take_glass">Take glass</string>
+    <string name="pour_dismiss">OK</string>
+
+    <!-- Available -->
+    <string name="available_no_bottles_title">No bottles loaded</string>
+    <string name="available_no_bottles_message">Load up to %1$d bottles into the rack and the machine will work out what it can pour.</string>
+    <string name="available_load_bottles">Load bottles</string>
+    <string name="available_nothing_title">Nothing pourable yet</string>
+    <string name="available_nothing_message">None of the recipes match the bottles in the rack. With only %1$d slots, a mixer or a citrus juice opens up the most drinks.</string>
+    <string name="available_adjust_bottles">Adjust bottles</string>
+    <string name="available_can_make_now">Can make now</string>
+    <string name="available_one_bottle_away">One bottle away</string>
+    <plurals name="available_ready_to_pour">
+        <item quantity="one">cocktail ready to pour</item>
+        <item quantity="other">cocktails ready to pour</item>
+    </plurals>
+    <string name="slots_filled">%1$d of %2$d slots filled</string>
+
+    <!-- Library -->
+    <string name="library_search_all">Search cocktails</string>
+    <string name="library_search_favourites">Search favourites</string>
+    <string name="library_search_mine">Search my drinks</string>
+    <string name="library_clear_search">Clear search</string>
+    <string name="library_surprise_me">Surprise me with a random cocktail</string>
+    <string name="library_filter_all">All</string>
+    <string name="library_filter_favourites">Favourites</string>
+    <string name="library_filter_mine">My drinks</string>
+    <string name="library_filter_counted">%1$s (%2$d)</string>
+    <string name="library_no_matches">No matches</string>
+    <string name="library_mine_empty_title">No drinks of your own yet</string>
+    <string name="library_mine_empty_message">Pick up to %1$d bottles, set the millilitres, and the machine pours it your way.</string>
+    <string name="library_mine_no_match">None of your drinks is called \"%1$s\".</string>
+    <string name="library_create_drink">Create a drink</string>
+    <string name="library_new_drink">New drink</string>
+    <string name="library_favourites_empty_title">No favourites yet</string>
+    <string name="library_favourites_empty_message">Tap the heart on any cocktail to keep it here.</string>
+    <string name="library_favourites_no_match">None of your favourites is called \"%1$s\".</string>
+    <string name="library_search_no_match">No cocktail called \"%1$s\" was found. Try a shorter name.</string>
+    <string name="library_nothing_title">Nothing to show</string>
+    <string name="library_nothing_message">The library could not be loaded.</string>
+
+    <!-- Bottles -->
+    <string name="bottles_title">Bottle rack</string>
+    <string name="bottles_summary">The machine holds %1$d bottles at a time — %2$d of %1$d slots filled.</string>
+    <string name="bottles_rack_full_notice">All %1$d slots are full — eject a bottle first.</string>
+    <string name="bottles_load_starter">Load starter rack</string>
+    <string name="bottles_eject_all">Eject all</string>
+    <string name="bottles_slot">SLOT %1$d</string>
+    <string name="bottles_slot_empty">Empty</string>
+    <string name="bottles_loaded_hint">Loaded — tap to eject</string>
+    <string name="bottles_rack_full">Rack full</string>
+    <string name="bottles_load_hint">Tap to load</string>
+    <string name="bottles_eject">Eject %1$s</string>
+
+    <!-- Settings -->
+    <string name="settings_machine_link">Machine link</string>
+    <string name="settings_lights">Lights</string>
+    <string name="settings_led_show">LED show</string>
+    <string name="settings_led_show_description">Animated light strip around the glass tray, playing while a cocktail is poured.</string>
+    <string name="settings_strip_on">Strip online — cycling spectrum</string>
+    <string name="settings_strip_off">Strip off — neutral finish</string>
+    <string name="settings_machine">Machine</string>
+    <string name="settings_slots_filled">Slots filled</string>
+    <string name="settings_slots_value">%1$d / %2$d</string>
+    <string name="settings_recipe_source">Recipe source</string>
+    <string name="settings_recipe_source_value">TheCocktailDB</string>
+    <string name="settings_hardware_link">Hardware link</string>
+    <string name="settings_glass_sensor">Glass sensor</string>
+    <string name="settings_sensor_not_set_up">Not set up</string>
+    <string name="settings_sensor_ready">Ready</string>
+    <string name="settings_prototype_build">Prototype build</string>
+    <string name="settings_sensor_needed">The machine won\'t pour until its glass sensor has measured the empty tray.</string>
+    <string name="settings_no_machine">No machine connected — pouring is disabled until one is.</string>
+    <string name="settings_simulated_machine">Connected to a simulated machine. Commands are logged, no liquid moves.</string>
+    <string name="settings_use_hardware">Use hardware machine</string>
+    <string name="settings_use_hardware_description">Pours and the light strip run on the Raspberry Pi instead of on screen.</string>
+    <string name="settings_address">Address</string>
+    <string name="settings_address_placeholder">192.168.1.42</string>
+    <string name="settings_port">Port</string>
+    <string name="settings_connect">Connect</string>
+    <string name="settings_test">Test</string>
+    <string name="settings_testing">Testing…</string>
+    <string name="settings_not_connected">Not connected</string>
+    <string name="settings_connecting">Connecting…</string>
+    <string name="settings_machine_summary">%1$s · %2$s · %3$d pumps</string>
+    <string name="settings_link_simulated">Simulated machine</string>
+    <string name="settings_link_live">Live</string>
+    <string name="settings_test_found">Found %1$s (%2$s, firmware %3$s)</string>
+
+    <!-- Stats -->
+    <string name="stats_empty_title">No pours yet</string>
+    <string name="stats_empty_message">Cocktails you make from this phone are counted here — how many, which ones, and how much went through each pump.</string>
+    <string name="stats_most_made">Most made</string>
+    <string name="stats_through_pumps">Through the pumps</string>
+    <string name="stats_rhythm">Your rhythm</string>
+    <string name="stats_milestones">Milestones</string>
+    <string name="stats_footnote">Counted on this phone. The machine can\'t see how much is left in a bottle — these are the volumes its pumps poured.</string>
+    <string name="stats_reset">Reset statistics</string>
+    <string name="stats_reset_title">Reset statistics?</string>
+    <string name="stats_reset_message">Every pour recorded on this phone is forgotten. This can\'t be undone.</string>
+    <string name="stats_reset_confirm">Reset</string>
+    <string name="stats_reset_keep">Keep</string>
+    <string name="stats_cocktails_made">Cocktails made</string>
+    <string name="stats_poured_total">Poured in total</string>
+    <string name="stats_recipes_tried">Recipes tried</string>
+    <string name="stats_this_week">This week · %1$d this month</string>
+    <string name="stats_times">×%1$d</string>
+    <string name="stats_happy_hour">Happy hour</string>
+    <string name="stats_hour">%1$02d:00</string>
+    <string name="stats_favourite_day">Favourite day</string>
+    <string name="stats_average_drink">Average drink</string>
+    <string name="stats_alcohol_free">Alcohol-free</string>
+    <string name="stats_share">%1$d (%2$d%%)</string>
+    <string name="stats_changed_mind">Changed my mind</string>
+    <string name="stats_machine_trouble">Machine trouble</string>
+    <string name="stats_first_pour">First pour</string>
+    <string name="stats_latest_pour">Latest pour</string>
+    <string name="stats_milestone_achieved">Achieved</string>
+    <string name="stats_milestone_locked">Locked</string>
+    <string name="stats_volume_with_bottles">%1$s · ≈ %2$s</string>
+    <plurals name="stats_bottles">
+        <item quantity="one">%1$.1f bottle</item>
+        <item quantity="other">%1$.1f bottles</item>
+    </plurals>
+    <string name="milestone_first_pour">First pour</string>
+    <string name="milestone_first_pour_detail">Make your first cocktail</string>
+    <string name="milestone_regular">Regular</string>
+    <string name="milestone_regular_detail">Make 10 cocktails</string>
+    <string name="milestone_party_host">Party host</string>
+    <string name="milestone_party_host_detail">Make 50 cocktails</string>
+    <string name="milestone_centurion">Centurion</string>
+    <string name="milestone_centurion_detail">Make 100 cocktails</string>
+    <string name="milestone_first_litre">First litre</string>
+    <string name="milestone_first_litre_detail">Pour 1 litre in total</string>
+    <string name="milestone_five_litres">Five litres</string>
+    <string name="milestone_five_litres_detail">Pour 5 litres in total</string>
+    <string name="milestone_explorer">Explorer</string>
+    <string name="milestone_explorer_detail">Try 10 different recipes</string>
+    <string name="milestone_connoisseur">Connoisseur</string>
+    <string name="milestone_connoisseur_detail">Try 25 different recipes</string>
+    <string name="milestone_designated_driver">Designated driver</string>
+    <string name="milestone_designated_driver_detail">Make 5 alcohol-free drinks</string>
+
+    <!-- Calibration and cleaning -->
+    <string name="title_calibration">Calibrate pumps</string>
+    <string name="title_cleaning">Clean pumps</string>
+    <string name="run_last">Last run: %1$s</string>
+    <string name="run_stopped">Stopped</string>
+    <string name="run_starting">Starting…</string>
+    <string name="distance_cm">%1$.1f cm</string>
+    <string name="flow_rate">%1$.2f ml/s</string>
+    <string name="duration_seconds">%1$d s</string>
+    <string name="calibration_disconnected">Connect to the machine in Settings first — calibration runs on the machine itself.</string>
+    <string name="calibration_busy">The machine is busy. Calibration is available again once it is done.</string>
+    <string name="calibration_step_sensor">1 · Glass sensor</string>
+    <string name="calibration_step_prime">2 · Prime the pumps</string>
+    <string name="calibration_step_calibrate">3 · Calibrate</string>
+    <string name="calibration_empty_tray">Empty tray</string>
+    <string name="calibration_not_measured">Not measured</string>
+    <string name="calibration_sensor_now">Sensor now</string>
+    <string name="calibration_no_reading">—</string>
+    <string name="calibration_no_echo">No echo</string>
+    <string name="calibration_glass_detected">%1$.1f cm · glass detected</string>
+    <string name="calibration_sensor_help">Take every glass off the tray, then measure. Every glass is detected against this distance, so measure again if the sensor or the tray moves. The machine won\'t pour until it has one.</string>
+    <string name="calibration_measure">Measure empty tray</string>
+    <string name="calibration_measuring">Measuring…</string>
+    <string name="calibration_prime_help">A dry tube pours far too little on its first run. Hold a cup under the nozzle and test each pump until liquid flows steadily. Untick a pump to leave it out.</string>
+    <string name="calibration_pump">Pump %1$d · %2$s</string>
+    <string name="calibration_pump_empty">empty</string>
+    <string name="calibration_running">Running…</string>
+    <string name="calibration_test_pump">Test %1$d s</string>
+    <string name="calibration_stop">Stop calibration</string>
+    <string name="calibration_run_help">Place the empty %1$d mm glass under the nozzle and start. Each selected pump runs a few seconds into it; the sensor measures how far the level rose. The new rates are used straight away.</string>
+    <string name="calibration_measure_first">Measure the empty tray first (step 1).</string>
+    <string name="calibration_start">Start calibration</string>
+    <string name="calibration_waiting_glass">Waiting for the empty glass</string>
+    <string name="calibration_pump_of">Pump %1$d of %2$d</string>
+    <string name="calibration_calibrating">Calibrating</string>
+    <string name="calibration_result_pump">Pump %1$d</string>
+    <string name="calibration_result">%1$.2f ml/s  ·  %2$d ml in %3$.1f s</string>
+    <string name="cleaning_disconnected">Connect to the machine in Settings first — cleaning runs on the machine itself.</string>
+    <string name="cleaning_busy">The machine is busy. Cleaning is available again once it is done.</string>
+    <string name="cleaning_step_prepare">1 · Prepare</string>
+    <string name="cleaning_step_pumps">2 · Pumps and timing</string>
+    <string name="cleaning_step_rinse">3 · Rinse</string>
+    <string name="cleaning_prepare_help">Swap each bottle for one of warm water. The glass sensor isn\'t used, so put a jug or bowl under the nozzle that holds everything the pumps will run.</string>
+    <string name="cleaning_container_confirm">A container for about %1$d ml is under the nozzle</string>
+    <string name="cleaning_pump">Pump %1$d</string>
+    <string name="cleaning_normally">Normally %1$s</string>
+    <string name="cleaning_normally_empty">Normally empty</string>
+    <string name="cleaning_seconds_per_pump">Seconds per pump</string>
+    <string name="cleaning_rounds">Rounds</string>
+    <string name="cleaning_rounds_value">%1$d×</string>
+    <string name="cleaning_order_help">The pumps run one at a time, 1 → %1$d, then start over for each round.</string>
+    <string name="cleaning_stop">Stop cleaning</string>
+    <string name="cleaning_tick_container">Tick the container box in step 1 to start.</string>
+    <string name="cleaning_start">Start cleaning</string>
+    <string name="cleaning_stopped">Stopped — put your bottles back when you\'re done</string>
+    <string name="cleaning_progress_starting">Starting</string>
+    <string name="cleaning_round">Round %1$d of %2$d</string>
+    <string name="cleaning_round_pump">Round %1$d of %2$d · pump %3$d</string>
+
+    <!-- Navigation -->
+    <string name="nav_available">Available</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_bottles">Bottles</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_settings">Settings</string>
+    <string name="title_new_drink">New drink</string>
+    <string name="title_edit_drink">Edit drink</string>
+
+    <!-- Custom drink editor -->
+    <string name="editor_not_found">Drink not found</string>
+    <string name="editor_delete_title">Delete \"%1$s\"?</string>
+    <string name="editor_delete_title_unnamed">Delete this drink?</string>
+    <string name="editor_delete_message">It\'s removed from My drinks and Favourites. Pours already made stay in Stats.</string>
+    <string name="editor_delete">Delete</string>
+    <string name="editor_delete_drink">Delete drink</string>
+    <string name="editor_name">Name</string>
+    <string name="editor_name_placeholder">e.g. Sunset Cooler</string>
+    <string name="editor_look">Look</string>
+    <string name="editor_selected">Selected</string>
+    <string name="editor_items_count">%1$d of %2$d</string>
+    <string name="editor_pour_order">Poured top to bottom.</string>
+    <string name="editor_add_ingredient">Add ingredient</string>
+    <string name="editor_notes">Notes</string>
+    <string name="editor_notes_placeholder">Add ice first, garnish with a lime wedge…</string>
+    <string name="editor_save_new">Save drink</string>
+    <string name="editor_save_changes">Save changes</string>
+    <string name="editor_choose_bottle">Choose a bottle</string>
+    <string name="editor_not_loaded">Not loaded</string>
+    <string name="editor_remove_ingredient">Remove ingredient</string>
+    <string name="editor_ml_less">%1$d ml less</string>
+    <string name="editor_ml_more">%1$d ml more</string>
+    <string name="editor_pour_earlier">Pour earlier</string>
+    <string name="editor_pour_later">Pour later</string>
+    <string name="editor_total">Total</string>
+    <string name="editor_in_use">In use</string>
+    <string name="editor_loaded">Loaded</string>
+    <string name="unit_ml">ml</string>
+    <string name="problem_no_name">Give the drink a name</string>
+    <string name="problem_no_items">Add at least one ingredient</string>
+    <string name="problem_too_many_items">The machine has only %1$d slots</string>
+    <string name="problem_bottle_missing">Pick a bottle for every ingredient</string>
+    <string name="problem_bottle_repeated">Each bottle can be used only once</string>
+    <string name="problem_volume_range">Each ingredient must be %1$d–%2$d ml</string>
+    <string name="problem_over_glass">That\'s %1$d ml — the glass holds %2$d ml</string>
 </resources>

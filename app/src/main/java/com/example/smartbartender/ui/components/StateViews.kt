@@ -38,8 +38,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.smartbartender.R
 import com.example.smartbartender.ui.theme.GraphiteElevated
 import com.example.smartbartender.ui.theme.SteelOutline
 import com.example.smartbartender.ui.theme.TextSecondary
@@ -155,7 +157,7 @@ fun ErrorState(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Connection lost",
+            text = stringResource(R.string.error_title_connection_lost),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -174,7 +176,7 @@ fun ErrorState(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
-            Text("Retry")
+            Text(stringResource(R.string.action_retry))
         }
     }
 }

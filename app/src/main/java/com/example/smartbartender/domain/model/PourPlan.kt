@@ -8,15 +8,40 @@ package com.example.smartbartender.domain.model
  * ids and millilitres and resolves the pumps itself.
  */
 data class PourPlan(
-    val request: PourRequest,
+    val drinkId: String,
+    val drinkName: String,
+    val glass: String?,
+    val items: List<PourItem>,
     /** Things a person has to do — ice, mint, a salted rim. Shown, never poured. */
     val manualSteps: List<String>,
     /** Ingredients that needed a guess, or could not be poured at all. Worth surfacing. */
-    val warnings: List<String>,
+    val warnings: List<PlanWarning>,
 ) {
-    val isPourable: Boolean get() = request.items.isNotEmpty()
+    val isPourable: Boolean get() = items.isNotEmpty()
 
-    val totalMl: Double get() = request.items.sumOf { it.ml }
+    val totalMl: Double get() = items.sumOf { it.ml }
+
+    /** What to post to the machine. The caller mints [jobId], so a retry can replay the same one. */
+    fun toRequest(jobId: String) = PourRequest(
+        jobId = jobId,
+        drinkId = drinkId,
+        drinkName = drinkName,
+        glass = glass,
+        items = items,
+        manualSteps = manualSteps,
+    )
+}
+
+/** Something about a plan the user should know before pouring. The detail screen words each one. */
+sealed interface PlanWarning {
+    /** The recipe needs a bottle the catalog knows but the rack does not hold. */
+    data class NotLoaded(val ingredient: String) : PlanWarning
+
+    /** The recipe gave no usable measure, so [ml] was guessed from the bottle's category. */
+    data class NoMeasure(val ingredient: String, val ml: Int) : PlanWarning
+
+    /** The recipe overflowed the glass and every pour was shrunk to fit [glassMl]. */
+    data class ScaledToGlass(val glassMl: Int) : PlanWarning
 }
 
 /** Never send a single pour larger than this, whatever the recipe or the parser says. */
@@ -25,21 +50,21 @@ const val MAX_ITEM_ML = 150.0
 /** The glass size to plan for until the machine reports its real one. */
 const val DEFAULT_MAX_POUR_ML = 250.0
 
-/** What to pour when the recipe gives no usable measure. Rough, but drinkable. */
-private val DEFAULT_ML_BY_CATEGORY = mapOf(
-    BottleCategory.SPIRIT to 40.0,
-    BottleCategory.LIQUEUR to 20.0,
-    BottleCategory.JUICE to 30.0,
-    BottleCategory.MIXER to 100.0,
-    BottleCategory.DAIRY to 30.0,
-)
-
 /** One "part" when a recipe is written in parts and nothing anchors it to a real volume. */
 private const val ML_PER_PART = 30.0
 
 /** A "Fill" ingredient gets what's left of the glass, within these bounds. */
 private const val MIN_FILL_ML = 20.0
-private const val MAX_FILL_ML = 150.0
+private const val MAX_FILL_ML = MAX_ITEM_ML
+
+/** What to pour when the recipe gives no usable measure. Rough, but drinkable. */
+private fun defaultMl(category: BottleCategory): Double = when (category) {
+    BottleCategory.SPIRIT -> 40.0
+    BottleCategory.LIQUEUR -> 20.0
+    BottleCategory.JUICE -> 30.0
+    BottleCategory.MIXER -> 100.0
+    BottleCategory.DAIRY -> 30.0
+}
 
 /**
  * Works out what to pour for [cocktail] given what is physically in the machine.
@@ -55,7 +80,7 @@ fun buildPourPlan(
     val loaded = slots.filterNotNull().toSet()
     val items = mutableListOf<PourItem>()
     val manualSteps = mutableListOf<String>()
-    val warnings = mutableListOf<String>()
+    val warnings = mutableListOf<PlanWarning>()
 
     // Pass one: classify every line, and work out the fixed volume so the relative and
     // "fill" lines have something to size themselves against.
@@ -64,12 +89,9 @@ fun buildPourPlan(
         val bottle = BottleCatalog.resolveBottle(ingredient.name)
         when {
             bottle != null && bottle.id in loaded -> pourable += ingredient to bottle
-            BottleCatalog.isPantryStaple(ingredient.name) ->
-                manualSteps += manualLabel(ingredient)
-            bottle != null ->
-                warnings += "${ingredient.name} is not loaded — add it by hand"
-            else ->
-                manualSteps += manualLabel(ingredient)
+            BottleCatalog.isPantryStaple(ingredient.name) -> manualSteps += manualLabel(ingredient)
+            bottle != null -> warnings += PlanWarning.NotLoaded(ingredient.name)
+            else -> manualSteps += manualLabel(ingredient)
         }
     }
 
@@ -91,8 +113,8 @@ fun buildPourPlan(
                 (maxPourMl - fixedMl).coerceIn(MIN_FILL_ML, MAX_FILL_ML)
 
             Measure.Unknown -> {
-                val fallback = DEFAULT_ML_BY_CATEGORY[bottle.category] ?: 30.0
-                warnings += "${ingredient.name} has no measure — pouring ${fallback.toInt()} ml"
+                val fallback = defaultMl(bottle.category)
+                warnings += PlanWarning.NoMeasure(ingredient.name, fallback.toInt())
                 fallback
             }
         }
@@ -103,17 +125,11 @@ fun buildPourPlan(
         )
     }
 
-    val scaled = scaleToGlass(items, maxPourMl, warnings)
-
     return PourPlan(
-        request = PourRequest(
-            jobId = "",  // minted by the caller, so a retry can replay the same id
-            drinkId = cocktail.id,
-            drinkName = cocktail.name,
-            glass = cocktail.glass,
-            items = scaled,
-            manualSteps = manualSteps,
-        ),
+        drinkId = cocktail.id,
+        drinkName = cocktail.name,
+        glass = cocktail.glass,
+        items = scaleToGlass(items, maxPourMl, warnings),
         manualSteps = manualSteps,
         warnings = warnings,
     )
@@ -123,13 +139,13 @@ fun buildPourPlan(
 private fun scaleToGlass(
     items: List<PourItem>,
     maxPourMl: Double,
-    warnings: MutableList<String>,
+    warnings: MutableList<PlanWarning>,
 ): List<PourItem> {
     val total = items.sumOf { it.ml }
     if (total <= maxPourMl || total <= 0) return items
 
     val factor = maxPourMl / total
-    warnings += "Scaled down to ${maxPourMl.toInt()} ml to fit the glass"
+    warnings += PlanWarning.ScaledToGlass(maxPourMl.toInt())
     return items.map { item -> item.copy(ml = (item.ml * factor).coerceAtLeast(1.0)) }
 }
 
